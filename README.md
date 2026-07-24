@@ -109,12 +109,19 @@ Login não usa token (JWT ou similar) devolvido no corpo da resposta para o fron
 | POST | `/auth/logout` | Invalida a sessão e remove o cookie | Sim (cookie) |
 | GET | `/auth/me` | Retorna os dados do usuário autenticado | Sim (cookie) |
 
+> **Nota sobre `curl` no Windows:** dentro do PowerShell, `curl` é apenas um apelido para `Invoke-WebRequest`, que **não** aceita as flags `-c`/`-b`/`-d` do curl real (dá erro de parâmetro ambíguo). Os exemplos abaixo trazem as duas versões: `curl` (Git Bash/WSL/Linux/macOS, ou `curl.exe` explicitamente no Windows) e PowerShell nativo com `Invoke-RestMethod -SessionVariable`.
+
 **POST /auth/registro**
 
 ```bash
 curl -X POST http://localhost:8000/auth/registro \
   -H "Content-Type: application/json" \
   -d '{"nome": "Rodrigo", "email": "rodrigo@teste.com", "senha": "senha1234"}'
+```
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/auth/registro" -Method Post `
+  -ContentType "application/json" `
+  -Body '{"nome": "Rodrigo", "email": "rodrigo@teste.com", "senha": "senha1234"}'
 ```
 ```json
 // 201 Created
@@ -129,19 +136,33 @@ curl -c cookies.txt -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "rodrigo@teste.com", "senha": "senha1234"}'
 ```
-`-c cookies.txt` salva o cookie `session_id` recebido. `401 Unauthorized` se e-mail/senha não conferirem.
+`-c cookies.txt` salva o cookie `session_id` recebido.
+
+```powershell
+$resp = Invoke-RestMethod -Uri "http://localhost:8000/auth/login" -Method Post `
+  -ContentType "application/json" `
+  -Body '{"email": "rodrigo@teste.com", "senha": "senha1234"}' `
+  -SessionVariable session
+```
+`-SessionVariable session` guarda o cookie na variável `$session`, que é reaproveitada nas chamadas seguintes. `401 Unauthorized` se e-mail/senha não conferirem.
 
 **GET /auth/me**
 
 ```bash
 curl -b cookies.txt http://localhost:8000/auth/me
 ```
-`-b cookies.txt` reenvia o cookie salvo no login. `401 Unauthorized` sem cookie válido.
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/auth/me" -WebSession $session
+```
+`401 Unauthorized` sem cookie válido.
 
 **POST /auth/logout**
 
 ```bash
 curl -b cookies.txt -c cookies.txt -X POST http://localhost:8000/auth/logout
+```
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/auth/logout" -Method Post -WebSession $session
 ```
 `204 No Content`. Depois disso, `/auth/me` volta a responder `401`.
 
