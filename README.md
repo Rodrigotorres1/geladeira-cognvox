@@ -34,6 +34,7 @@ Com o servidor rodando:
 | `DATABASE_URL` | String de conexão do banco (ex.: `sqlite:///./geladeira.db`) |
 | `SECRET_KEY` | Chave usada para assinar a sessão do usuário; deve ser um valor aleatório e secreto em produção |
 | `FRONTEND_ORIGIN` | Origem permitida no CORS (ex.: `http://localhost:5173`), precisa bater exatamente com a URL do frontend para os cookies de sessão funcionarem |
+| `ENVIRONMENT` | `local` para desenvolvimento (cookie de sessão sem `Secure`, funciona em `http://localhost`); qualquer outro valor (ex.: `production`) ativa `Secure=True` no cookie |
 
 ### Arquitetura em camadas
 
@@ -78,7 +79,70 @@ usuarios  1───N  itens_estoque  1───N  movimentacoes
 - **`usuarios`**: nome, e-mail (único), hash da senha, data de criação.
 - **`itens_estoque`**: pertence a um usuário (quem cadastrou o item), com nome, quantidade, unidade, valor unitário e validade opcional.
 - **`movimentacoes`**: entrada (compra/reposição) ou saída (consumo) de um item, sempre vinculada ao usuário que realizou a ação e com o valor total gasto naquela movimentação — é essa tabela que alimenta o relatório de gastos por usuário/período.
+- **`sessoes`**: sessão de login do usuário (id da sessão, `usuario_id`, `criado_em`, `expira_em`) — ver seção de autenticação abaixo.
 
 **Por que UUID em vez de ID incremental:** todas as chaves primárias são UUID v4 gerados no próprio backend (`uuid.uuid4()`), nunca IDs sequenciais do tipo `1, 2, 3...`. Um ID incremental permite que qualquer usuário autenticado tente adivinhar registros de outras pessoas só variando o número na URL (ex.: `GET /itens/1`, `/itens/2`, `/itens/3`) — esse tipo de falha é conhecido como IDOR (Insecure Direct Object Reference)/enumeração de recursos. Um UUID v4 é gerado a partir de dados aleatórios, então não há um "próximo" valor previsível para tentar.
 
 **Por que os relacionamentos fazem sentido para o problema:** o domínio é literalmente uma cadeia de posse — um usuário cadastra itens, e cada item acumula um histórico de movimentações que também precisa saber *quem* a realizou (não necessariamente quem cadastrou o item, já que a geladeira é compartilhada). Por isso `movimentacoes` guarda tanto `item_id` quanto `usuario_id`: sem o `usuario_id` na própria movimentação, seria impossível calcular "quanto cada pessoa gastou", que é um requisito central do desafio.
+
+### Autenticação e sessão
+
+Login não usa token (JWT ou similar) devolvido no corpo da resposta para o frontend guardar. Em vez disso:
+
+1. `POST /auth/login` valida e-mail/senha e cria uma linha na tabela `sessoes` (id da sessão, `usuario_id`, `expira_em` = agora + 7 dias).
+2. O id dessa sessão é assinado com `itsdangerous` (usando `SECRET_KEY`) e devolvido em um cookie `session_id` com `HttpOnly=True`, `SameSite=Lax` e `Secure` (ligado fora de ambiente local).
+3. Em toda requisição a uma rota protegida, o navegador manda esse cookie automaticamente (por isso o frontend precisa usar `credentials: "include"`/`withCredentials: true` e o CORS precisa de `allow_credentials=True` com uma origem explícita). O backend lê o cookie, verifica a assinatura e confere no banco se a sessão existe e não expirou.
+4. `POST /auth/logout` apaga a linha da sessão no banco e remove o cookie — a sessão morre no servidor, não só no navegador.
+
+**Por que HttpOnly e nunca `localStorage`:** um cookie `HttpOnly` não pode ser lido por JavaScript (`document.cookie` não o enxerga). Se o token de sessão fosse guardado em `localStorage`, qualquer script malicioso injetado na página via XSS conseguiria roubá-lo e agir como o usuário. Com `HttpOnly`, mesmo que um XSS aconteça, o atacante não consegue ler o cookie de sessão.
+
+**Por que sessão no banco em vez de só um token assinado:** o cookie guarda apenas o *id* da sessão, nunca dados do usuário. Isso permite revogar uma sessão a qualquer momento (logout, ou um admin encerrando sessões) simplesmente apagando a linha no banco — um JWT autocontido, por comparação, continua "válido" até expirar mesmo que você quisesse invalidá-lo antes.
+
+**Por que a senha é armazenada em hash:** a senha em si nunca é salva, só o resultado de um hash bcrypt (`senha_hash`). Bcrypt é deliberadamente lento e usa "salt", o que torna inviável tanto descobrir a senha original a partir do hash quanto usar tabelas pré-computadas (rainbow tables) para quebrá-la. Mesmo que o banco vaze, as senhas continuam protegidas.
+
+### Rotas da API implementadas
+
+| Método | Rota | Descrição | Autenticação |
+|---|---|---|---|
+| POST | `/auth/registro` | Cria um novo usuário | Não |
+| POST | `/auth/login` | Autentica e define o cookie de sessão | Não |
+| POST | `/auth/logout` | Invalida a sessão e remove o cookie | Sim (cookie) |
+| GET | `/auth/me` | Retorna os dados do usuário autenticado | Sim (cookie) |
+
+**POST /auth/registro**
+
+```bash
+curl -X POST http://localhost:8000/auth/registro \
+  -H "Content-Type: application/json" \
+  -d '{"nome": "Rodrigo", "email": "rodrigo@teste.com", "senha": "senha1234"}'
+```
+```json
+// 201 Created
+{"id": "5eabe54b-3a06-4089-8e95-584185758bd4", "nome": "Rodrigo", "email": "rodrigo@teste.com", "criado_em": "2026-07-24T17:34:04.749696"}
+```
+`409 Conflict` se o e-mail já existe. `422 Unprocessable Entity` se a senha tiver menos de 8 caracteres ou o e-mail for inválido.
+
+**POST /auth/login**
+
+```bash
+curl -c cookies.txt -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "rodrigo@teste.com", "senha": "senha1234"}'
+```
+`-c cookies.txt` salva o cookie `session_id` recebido. `401 Unauthorized` se e-mail/senha não conferirem.
+
+**GET /auth/me**
+
+```bash
+curl -b cookies.txt http://localhost:8000/auth/me
+```
+`-b cookies.txt` reenvia o cookie salvo no login. `401 Unauthorized` sem cookie válido.
+
+**POST /auth/logout**
+
+```bash
+curl -b cookies.txt -c cookies.txt -X POST http://localhost:8000/auth/logout
+```
+`204 No Content`. Depois disso, `/auth/me` volta a responder `401`.
+
+No Swagger (`/docs`) o fluxo é o mesmo: chame `/auth/login` pelo botão "Try it out", e o navegador guarda o cookie automaticamente para as chamadas seguintes na mesma aba — não precisa copiar nada manualmente.
