@@ -10,6 +10,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.item_estoque import ItemEstoque
     from app.models.movimentacao import Movimentacao
+    from app.models.sessao import Sessao
 
 
 class Usuario(Base):
@@ -28,5 +29,8 @@ class Usuario(Base):
         back_populates="usuario", cascade="all, delete-orphan"
     )
     movimentacoes: Mapped[list["Movimentacao"]] = relationship(
+        back_populates="usuario", cascade="all, delete-orphan"
+    )
+    sessoes: Mapped[list["Sessao"]] = relationship(
         back_populates="usuario", cascade="all, delete-orphan"
     )
