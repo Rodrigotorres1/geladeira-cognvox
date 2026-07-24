@@ -167,3 +167,51 @@ Invoke-RestMethod -Uri "http://localhost:8000/auth/logout" -Method Post -WebSess
 `204 No Content`. Depois disso, `/auth/me` volta a responder `401`.
 
 No Swagger (`/docs`) o fluxo é o mesmo: chame `/auth/login` pelo botão "Try it out", e o navegador guarda o cookie automaticamente para as chamadas seguintes na mesma aba — não precisa copiar nada manualmente.
+
+### Rotas de itens do estoque
+
+Todas exigem sessão válida (cookie `session_id`) — sem ela, qualquer uma retorna `401 Unauthorized`. A geladeira é compartilhada, então `GET /itens` lista os itens de todos os usuários; `POST /itens` vincula o item criado ao usuário autenticado (`usuario_id`), mas qualquer usuário logado pode editar (`PUT`) ou remover (`DELETE`) qualquer item.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/itens` | Lista todos os itens do estoque |
+| POST | `/itens` | Cria um item, vinculado ao usuário autenticado |
+| PUT | `/itens/{id}` | Atualiza um item existente (substituição completa dos campos) |
+| DELETE | `/itens/{id}` | Remove um item |
+
+**POST /itens**
+
+```bash
+curl -b cookies.txt -X POST http://localhost:8000/itens \
+  -H "Content-Type: application/json" \
+  -d '{"nome": "Leite", "quantidade": 2, "unidade": "litro", "valor_unitario": 5.50, "validade": "2026-08-01"}'
+```
+```json
+// 201 Created
+{"id": "023aaf93-ff91-4471-8ce9-66298ecfa495", "usuario_id": "c8a21794-030b-4f9c-978b-65838740f751", "nome": "Leite", "quantidade": 2.0, "unidade": "litro", "valor_unitario": "5.50", "validade": "2026-08-01", "atualizado_em": "2026-07-24T21:00:38.898690"}
+```
+`validade` é opcional (pode omitir). `422 Unprocessable Entity` se `quantidade` ou `valor_unitario` forem negativos.
+
+**GET /itens**
+
+```bash
+curl -b cookies.txt http://localhost:8000/itens
+```
+
+**PUT /itens/{id}**
+
+```bash
+curl -b cookies.txt -X PUT http://localhost:8000/itens/023aaf93-ff91-4471-8ce9-66298ecfa495 \
+  -H "Content-Type: application/json" \
+  -d '{"nome": "Leite Integral", "quantidade": 3, "unidade": "litro", "valor_unitario": 5.90, "validade": "2026-08-10"}'
+```
+`404 Not Found` com `{"detail": "Item nao encontrado"}` se o id não existir.
+
+**DELETE /itens/{id}**
+
+```bash
+curl -b cookies.txt -X DELETE http://localhost:8000/itens/023aaf93-ff91-4471-8ce9-66298ecfa495
+```
+`204 No Content` em caso de sucesso; `404 Not Found` se o id não existir.
+
+Em PowerShell, troque `curl -b cookies.txt` por `Invoke-RestMethod -WebSession $session` (mesma lógica dos exemplos de autenticação acima), e `-X POST`/`-X PUT`/`-X DELETE` por `-Method Post`/`-Method Put`/`-Method Delete`.

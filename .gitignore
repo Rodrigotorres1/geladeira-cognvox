@@ -32,6 +32,9 @@ build/
 *.sqlite
 *.sqlite3
 
+# Arquivos de cookie gerados ao testar a API com curl -c
+cookies.txt
+
 # Editor / OS
 .vscode/
 .idea/
