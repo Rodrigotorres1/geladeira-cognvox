@@ -62,3 +62,23 @@ Se as três coisas estão misturadas na mesma função, qualquer mudança em uma
 - `core` fica de fora de tudo isso porque não é sobre negócio nem sobre API — é configuração e infraestrutura que todas as outras camadas podem usar.
 
 Na prática, isso segue o princípio de responsabilidade única: cada camada tem um único motivo para mudar, o que torna o código mais fácil de testar, revisar e evoluir sem efeitos colaterais inesperados.
+
+### Modelagem de dados
+
+O schema (em `backend/app/models/`) tem três tabelas:
+
+```
+usuarios  1───N  itens_estoque  1───N  movimentacoes
+   │                                        │
+   └────────────────────────────────────────┘
+              (usuario_id também em movimentacoes,
+               registra quem fez a movimentação)
+```
+
+- **`usuarios`**: nome, e-mail (único), hash da senha, data de criação.
+- **`itens_estoque`**: pertence a um usuário (quem cadastrou o item), com nome, quantidade, unidade, valor unitário e validade opcional.
+- **`movimentacoes`**: entrada (compra/reposição) ou saída (consumo) de um item, sempre vinculada ao usuário que realizou a ação e com o valor total gasto naquela movimentação — é essa tabela que alimenta o relatório de gastos por usuário/período.
+
+**Por que UUID em vez de ID incremental:** todas as chaves primárias são UUID v4 gerados no próprio backend (`uuid.uuid4()`), nunca IDs sequenciais do tipo `1, 2, 3...`. Um ID incremental permite que qualquer usuário autenticado tente adivinhar registros de outras pessoas só variando o número na URL (ex.: `GET /itens/1`, `/itens/2`, `/itens/3`) — esse tipo de falha é conhecido como IDOR (Insecure Direct Object Reference)/enumeração de recursos. Um UUID v4 é gerado a partir de dados aleatórios, então não há um "próximo" valor previsível para tentar.
+
+**Por que os relacionamentos fazem sentido para o problema:** o domínio é literalmente uma cadeia de posse — um usuário cadastra itens, e cada item acumula um histórico de movimentações que também precisa saber *quem* a realizou (não necessariamente quem cadastrou o item, já que a geladeira é compartilhada). Por isso `movimentacoes` guarda tanto `item_id` quanto `usuario_id`: sem o `usuario_id` na própria movimentação, seria impossível calcular "quanto cada pessoa gastou", que é um requisito central do desafio.
