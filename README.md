@@ -33,6 +33,15 @@ Com o servidor rodando:
 
 As tabelas do banco (SQLite, arquivo `geladeira.db`) são criadas automaticamente na primeira vez que o servidor sobe.
 
+### Rodando os testes
+
+```powershell
+cd backend
+pytest -v
+```
+
+Os 11 testes (`backend/tests/`) rodam contra um SQLite isolado (`tests/test.db`, criado e apagado automaticamente) — nunca tocam em `geladeira.db`, o banco de desenvolvimento.
+
 ---
 
 ## 3. Como rodar o frontend
