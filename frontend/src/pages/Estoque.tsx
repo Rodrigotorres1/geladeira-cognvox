@@ -32,6 +32,34 @@ function formatarData(data: string | null) {
   return `${dia}/${mes}/${ano}`
 }
 
+const LIMITE_ESTOQUE_BAIXO = 3
+const DIAS_ALERTA_VALIDADE = 7
+
+// "YYYY-MM-DD" comparado como string já dá a ordem cronológica certa (zero
+// à esquerda garante isso), então nem precisa converter para Date — mesmo
+// raciocínio de formatarData: evitar `new Date(stringISO)` e seu bug de fuso.
+function dataISO(data: Date) {
+  const ano = data.getFullYear()
+  const mes = String(data.getMonth() + 1).padStart(2, '0')
+  const dia = String(data.getDate()).padStart(2, '0')
+  return `${ano}-${mes}-${dia}`
+}
+
+function estoqueBaixo(item: ItemEstoque) {
+  return item.quantidade < LIMITE_ESTOQUE_BAIXO
+}
+
+function validadeVencida(item: ItemEstoque) {
+  return item.validade !== null && item.validade < dataISO(new Date())
+}
+
+function validadeProxima(item: ItemEstoque) {
+  if (item.validade === null) return false
+  const limite = new Date()
+  limite.setDate(limite.getDate() + DIAS_ALERTA_VALIDADE)
+  return item.validade >= dataISO(new Date()) && item.validade <= dataISO(limite)
+}
+
 export function Estoque() {
   const { itens, carregando, erro, criarItem, atualizarItem, removerItem, registrarEntrada } =
     useItens()
@@ -153,6 +181,13 @@ export function Estoque() {
             <p className="text-gray-500">Nenhum item cadastrado ainda.</p>
           ) : (
             <div className="overflow-x-auto">
+              {itens.some((item) => estoqueBaixo(item) || validadeProxima(item) || validadeVencida(item)) && (
+                <p className="mb-3 text-xs text-gray-500">
+                  <span className="font-semibold text-orange-600">Laranja</span>: estoque abaixo
+                  de {LIMITE_ESTOQUE_BAIXO} ou validade nos próximos {DIAS_ALERTA_VALIDADE} dias ·{' '}
+                  <span className="font-semibold text-red-600">Vermelho</span>: item vencido
+                </p>
+              )}
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-gray-200 text-gray-600">
                   <tr>
@@ -165,30 +200,60 @@ export function Estoque() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {itens.map((item) => (
-                    <tr key={item.id}>
-                      <td className="py-3 pr-4 text-gray-900">{item.nome}</td>
-                      <td className="py-3 pr-4 text-gray-600">{item.quantidade}</td>
-                      <td className="py-3 pr-4 text-gray-600">{item.unidade}</td>
-                      <td className="py-3 pr-4 text-gray-600">
-                        R$ {Number(item.valor_unitario).toFixed(2)}
-                      </td>
-                      <td className="py-3 pr-4 text-gray-600">{formatarData(item.validade)}</td>
-                      <td className="py-3 pr-0">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="secondary" onClick={() => abrirEntrada(item)}>
-                            Entrada
-                          </Button>
-                          <Button variant="secondary" onClick={() => abrirEdicaoItem(item)}>
-                            Editar
-                          </Button>
-                          <Button variant="secondary" onClick={() => handleRemover(item)}>
-                            Remover
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {itens.map((item) => {
+                    const vencido = validadeVencida(item)
+                    const proxima = !vencido && validadeProxima(item)
+                    const baixo = estoqueBaixo(item)
+                    const destaque = vencido
+                      ? 'border-l-4 border-red-500 bg-red-50'
+                      : baixo || proxima
+                        ? 'border-l-4 border-orange-400 bg-orange-50'
+                        : ''
+
+                    return (
+                      <tr key={item.id} className={destaque}>
+                        <td className="py-3 pr-4 pl-2 text-gray-900">{item.nome}</td>
+                        <td
+                          className={`py-3 pr-4 ${baixo ? 'font-semibold text-orange-600' : 'text-gray-600'}`}
+                        >
+                          {item.quantidade}
+                          {baixo && <span className="ml-1 text-xs font-normal">(baixo)</span>}
+                        </td>
+                        <td className="py-3 pr-4 text-gray-600">{item.unidade}</td>
+                        <td className="py-3 pr-4 text-gray-600">
+                          R$ {Number(item.valor_unitario).toFixed(2)}
+                        </td>
+                        <td
+                          className={`py-3 pr-4 ${
+                            vencido
+                              ? 'font-semibold text-red-600'
+                              : proxima
+                                ? 'font-semibold text-orange-600'
+                                : 'text-gray-600'
+                          }`}
+                        >
+                          {formatarData(item.validade)}
+                          {vencido && <span className="ml-1 text-xs font-normal">(vencido)</span>}
+                          {proxima && (
+                            <span className="ml-1 text-xs font-normal">(vence em breve)</span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-0">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="secondary" onClick={() => abrirEntrada(item)}>
+                              Entrada
+                            </Button>
+                            <Button variant="secondary" onClick={() => abrirEdicaoItem(item)}>
+                              Editar
+                            </Button>
+                            <Button variant="secondary" onClick={() => handleRemover(item)}>
+                              Remover
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
