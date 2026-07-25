@@ -215,3 +215,31 @@ curl -b cookies.txt -X DELETE http://localhost:8000/itens/023aaf93-ff91-4471-8ce
 `204 No Content` em caso de sucesso; `404 Not Found` se o id não existir.
 
 Em PowerShell, troque `curl -b cookies.txt` por `Invoke-RestMethod -WebSession $session` (mesma lógica dos exemplos de autenticação acima), e `-X POST`/`-X PUT`/`-X DELETE` por `-Method Post`/`-Method Put`/`-Method Delete`.
+
+### Movimentações de estoque e relatório de gastos
+
+`POST /movimentacoes` registra uma entrada (reposição) ou saída (consumo) de um item, sempre vinculada ao usuário autenticado:
+
+- **`entrada`**: soma `quantidade` ao estoque do item.
+- **`saida`**: subtrai `quantidade` do estoque — se não houver estoque suficiente, retorna `400` sem alterar nada. O `valor_total` da movimentação é sempre `quantidade × valor_unitario` do item **no momento da movimentação**, calculado no backend (o cliente nunca envia um valor, só a quantidade).
+
+```bash
+curl -b cookies.txt -X POST http://localhost:8000/movimentacoes \
+  -H "Content-Type: application/json" \
+  -d '{"item_id": "ebba31e2-3a8d-403f-95af-c19631bb57cf", "tipo": "saida", "quantidade": 4}'
+```
+```json
+// 201 Created
+{"id": "7647422c-e0c8-448d-a0c9-a35bda21d315", "item_id": "ebba31e2-...", "usuario_id": "6259aa48-...", "tipo": "saida", "quantidade": 4.0, "valor_total": "12.00", "criado_em": "2026-07-25T17:47:58.266747"}
+```
+`404 Not Found` se `item_id` não existir. `400 Bad Request` (`{"detail": "Estoque insuficiente para essa saida"}`) se a saída pedida for maior que o estoque atual.
+
+`GET /relatorios/gastos` soma o `valor_total` de todas as saídas do usuário autenticado num período, e devolve também a lista das movimentações usadas no cálculo:
+
+```bash
+curl -b cookies.txt "http://localhost:8000/relatorios/gastos?data_inicio=2026-07-01&data_fim=2026-07-31"
+```
+```json
+{"usuario_id": "6259aa48-...", "data_inicio": "2026-07-01", "data_fim": "2026-07-31", "total_gasto": "12.00", "movimentacoes": [/* ... */]}
+```
+`data_inicio`/`data_fim` (formato `YYYY-MM-DD`) são opcionais — se omitidos, o período padrão é o mês corrente.
