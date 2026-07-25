@@ -127,7 +127,7 @@ Invoke-RestMethod -Uri "http://localhost:8000/auth/registro" -Method Post `
 // 201 Created
 {"id": "5eabe54b-3a06-4089-8e95-584185758bd4", "nome": "Rodrigo", "email": "rodrigo@teste.com", "criado_em": "2026-07-24T17:34:04.749696"}
 ```
-`409 Conflict` se o e-mail já existe. `422 Unprocessable Entity` se a senha tiver menos de 8 caracteres ou o e-mail for inválido.
+`409 Conflict` se o e-mail já existe. `422 Unprocessable Entity` se a senha tiver menos de 8 ou mais de 72 caracteres (limite do próprio bcrypt) ou o e-mail for inválido.
 
 **POST /auth/login**
 
@@ -212,7 +212,7 @@ curl -b cookies.txt -X PUT http://localhost:8000/itens/023aaf93-ff91-4471-8ce9-6
 ```bash
 curl -b cookies.txt -X DELETE http://localhost:8000/itens/023aaf93-ff91-4471-8ce9-66298ecfa495
 ```
-`204 No Content` em caso de sucesso; `404 Not Found` se o id não existir.
+`204 No Content` em caso de sucesso; `404 Not Found` se o id não existir; `409 Conflict` (`{"detail": "Nao e possivel excluir um item com movimentacoes registradas"}`) se o item já tiver movimentações — o histórico de gastos não pode ser apagado excluindo o item que ele referencia.
 
 Em PowerShell, troque `curl -b cookies.txt` por `Invoke-RestMethod -WebSession $session` (mesma lógica dos exemplos de autenticação acima), e `-X POST`/`-X PUT`/`-X DELETE` por `-Method Post`/`-Method Put`/`-Method Delete`.
 
