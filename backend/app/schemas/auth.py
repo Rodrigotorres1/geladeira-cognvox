@@ -7,12 +7,12 @@ from pydantic import BaseModel, EmailStr, Field
 class UsuarioRegistro(BaseModel):
     nome: str = Field(min_length=1)
     email: EmailStr
-    senha: str = Field(min_length=8)
+    senha: str = Field(min_length=8, max_length=72)
 
 
 class UsuarioLogin(BaseModel):
     email: EmailStr
-    senha: str
+    senha: str = Field(max_length=72)
 
 
 class UsuarioOut(BaseModel):
