@@ -28,6 +28,7 @@ class ItemEstoque(Base):
     )
 
     usuario: Mapped["Usuario"] = relationship(back_populates="itens_estoque")
-    movimentacoes: Mapped[list["Movimentacao"]] = relationship(
-        back_populates="item", cascade="all, delete-orphan"
-    )
+    # Sem cascade de delete: movimentacoes sao historico/auditoria de gastos,
+    # nao dado descartavel do item. remover_item() em itens_service.py
+    # bloqueia a exclusao explicitamente se houver movimentacoes associadas.
+    movimentacoes: Mapped[list["Movimentacao"]] = relationship(back_populates="item")

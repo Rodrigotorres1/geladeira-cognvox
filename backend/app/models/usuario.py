@@ -25,9 +25,11 @@ class Usuario(Base):
     senha_hash: Mapped[str] = mapped_column(String, nullable=False)
     criado_em: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
-    itens_estoque: Mapped[list["ItemEstoque"]] = relationship(
-        back_populates="usuario", cascade="all, delete-orphan"
-    )
+    # Sem cascade de delete: um item da geladeira compartilhada nao deveria
+    # sumir so porque quem o cadastrou foi removido (nao ha endpoint de
+    # exclusao de usuario hoje, mas o cascade aqui ficaria perigoso assim
+    # que um existir — mesmo raciocinio do ItemEstoque.movimentacoes).
+    itens_estoque: Mapped[list["ItemEstoque"]] = relationship(back_populates="usuario")
     movimentacoes: Mapped[list["Movimentacao"]] = relationship(
         back_populates="usuario", cascade="all, delete-orphan"
     )

@@ -3,10 +3,15 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.models.item_estoque import ItemEstoque
+from app.models.movimentacao import Movimentacao
 from app.schemas.itens import ItemAtualizar, ItemCriar
 
 
 class ItemNaoEncontradoError(Exception):
+    pass
+
+
+class ItemComMovimentacoesError(Exception):
     pass
 
 
@@ -50,5 +55,12 @@ def atualizar_item(db: Session, item_id: uuid.UUID, dados: ItemAtualizar) -> Ite
 
 def remover_item(db: Session, item_id: uuid.UUID) -> None:
     item = buscar_item(db, item_id)
+
+    tem_movimentacoes = (
+        db.query(Movimentacao.id).filter(Movimentacao.item_id == item_id).first() is not None
+    )
+    if tem_movimentacoes:
+        raise ItemComMovimentacoesError()
+
     db.delete(item)
     db.commit()

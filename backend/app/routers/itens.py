@@ -46,3 +46,8 @@ def remover_item(item_id: uuid.UUID, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Item nao encontrado"
         )
+    except itens_service.ItemComMovimentacoesError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Nao e possivel excluir um item com movimentacoes registradas",
+        )
