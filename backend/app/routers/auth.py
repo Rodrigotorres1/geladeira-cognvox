@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.security import (
     SESSION_COOKIE_NAME,
     cookie_is_secure,
+    cookie_samesite,
     get_current_user,
     sign_session_id,
     unsign_session_id,
@@ -43,7 +44,7 @@ def login(dados: UsuarioLogin, response: Response, db: Session = Depends(get_db)
         key=SESSION_COOKIE_NAME,
         value=sign_session_id(sessao.id),
         httponly=True,
-        samesite="lax",
+        samesite=cookie_samesite(),
         secure=cookie_is_secure(),
         max_age=int((sessao.expira_em - sessao.criado_em).total_seconds()),
         path="/",

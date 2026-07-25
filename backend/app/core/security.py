@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import Cookie, Depends, HTTPException, status
 from itsdangerous import BadSignature, URLSafeSerializer
@@ -47,6 +47,16 @@ def unsign_session_id(cookie_value: str) -> Optional[uuid.UUID]:
 
 def cookie_is_secure() -> bool:
     return settings.environment != "local"
+
+
+# Local: backend e frontend rodam os dois em localhost (portas diferentes,
+# mas mesmo "site" para fins de SameSite) — "lax" já basta e nem exige
+# Secure, o que evita precisar de HTTPS local. Fora de local (Render +
+# Vercel, dominios diferentes): e uma requisicao cross-site de verdade, e
+# navegadores so mandam cookie cross-site com SameSite="none" — que por sua
+# vez exige Secure=True (cookie_is_secure() ja liga isso fora de "local").
+def cookie_samesite() -> Literal["lax", "none"]:
+    return "lax" if settings.environment == "local" else "none"
 
 
 def get_current_user(
