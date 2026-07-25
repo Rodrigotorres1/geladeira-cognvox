@@ -6,7 +6,7 @@ Aplicação full stack para controle de estoque, consumo e gastos de uma geladei
 
 ```
 /backend   # API em FastAPI + SQLAlchemy
-/frontend  # Aplicação React + TypeScript
+/frontend  # Aplicação Vite + React + TypeScript
 ```
 
 ## Backend
@@ -243,3 +243,52 @@ curl -b cookies.txt "http://localhost:8000/relatorios/gastos?data_inicio=2026-07
 {"usuario_id": "6259aa48-...", "data_inicio": "2026-07-01", "data_fim": "2026-07-31", "total_gasto": "12.00", "movimentacoes": [/* ... */]}
 ```
 `data_inicio`/`data_fim` (formato `YYYY-MM-DD`) são opcionais — se omitidos, o período padrão é o mês corrente.
+
+## Frontend
+
+### Como rodar
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Abre em `http://localhost:5173`. Não tem variáveis de ambiente: a URL do backend é fixa em `src/api/client.ts` (`http://localhost:8000`), já que o projeto roda inteiro em local — numa aplicação real isso viraria uma env var (`VITE_API_URL`) para poder apontar para um backend diferente em cada ambiente de deploy.
+
+O backend precisa estar rodando em `http://localhost:8000` (veja a seção acima) — o `FRONTEND_ORIGIN` do `.env` do backend já vem configurado para `http://localhost:5173` por padrão, então CORS com cookies funciona sem ajuste extra.
+
+### Stack
+
+Vite + React + TypeScript, `react-router-dom` para rotas, `axios` para chamadas HTTP, Tailwind CSS v4 para estilo, `recharts` para o gráfico de gastos.
+
+### Estrutura
+
+```
+frontend/src/
+├── api/         # instância do axios (withCredentials: true)
+├── context/     # AuthContext — usuário logado em memória, nunca em localStorage
+├── components/  # Layout (barra superior + navegação) e RequireAuth (rota protegida)
+├── components/ui/  # Button, Input, Card — reusados em todas as telas
+├── hooks/       # useItens, useGastos — toda chamada à API fica aqui, fora das páginas
+├── lib/         # utilitários pequenos (ex.: extrair mensagem de erro da API)
+├── pages/       # Login, Registro, Estoque, Gastos
+└── types/       # tipos espelhando os schemas Pydantic do backend
+```
+
+A mesma separação de camadas do backend se repete aqui, adaptada ao frontend: `pages` decide *o que aparece na tela*, `hooks` decide *de onde vêm os dados*. Uma página nunca chama `axios`/`api` diretamente — sempre por um hook. Isso permite reaproveitar a mesma lógica de busca de itens em duas telas diferentes (`Estoque` e `Gastos`, que usa `useItens` só para popular o seletor de item no formulário de saída) sem duplicar código, e mantém o componente livre de detalhes de rede.
+
+### Autenticação no cliente
+
+`AuthContext` guarda o usuário logado em `state` do React (nunca em `localStorage`) e, ao montar a aplicação, chama `GET /auth/me` para descobrir se já existe uma sessão válida — necessário porque o cookie de sessão é `HttpOnly` e por isso invisível para o JavaScript do frontend. `RequireAuth` envolve as rotas `/estoque` e `/gastos` e redireciona para `/login` enquanto não houver usuário no contexto.
+
+### Rotas do frontend
+
+| Rota | Protegida | Descrição |
+|---|---|---|
+| `/login` | Não | Formulário de login |
+| `/registro` | Não | Cadastro de usuário — já loga automaticamente em seguida, chamando `/auth/login` com as mesmas credenciais (o `POST /auth/registro` do backend só cria o usuário, não abre sessão) |
+| `/estoque` | Sim | Lista os itens (tabela), cadastro/edição via modal, remoção com confirmação, e ação "Entrada" por item para registrar reposição de estoque |
+| `/gastos` | Sim | Total gasto no período (com filtro de data), gráfico de barras dos gastos por dia, e formulário para registrar saída (consumo) de um item |
+
+**Editar item × registrar movimentação:** o botão "Editar" (`PUT /itens/{id}`) corrige o cadastro do item (nome, unidade etc.) e não deixa rastro — é para consertar um erro de digitação. Já "Entrada" e "Registrar saída" (`POST /movimentacoes`) criam um evento no histórico de movimentações, vinculado a quem fez a ação. Se alterar a quantidade em estoque só fosse possível editando o item, não haveria como responder "quem repôs o quê" ou "quanto foi gasto por período" — que são requisitos centrais do desafio.
