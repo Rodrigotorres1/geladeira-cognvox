@@ -1,0 +1,24 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      # Sobrescreve o DATABASE_URL do .env: dentro do container o banco
+      # fica em ./data (montada como volume nomeado abaixo), para persistir
+      # entre "docker compose down"/"up" sem depender do FS do host.
+      DATABASE_URL: sqlite:///./data/geladeira.db
+    volumes:
+      - backend_data:/app/data
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  backend_data:

@@ -12,6 +12,8 @@ Aplicação full stack para controle de estoque de uma **geladeira compartilhada
 - **Backend**: autenticação por sessão (cookie `HttpOnly`), CRUD de itens, registro de movimentações (entrada/saída) e relatório de gastos por período.
 - **Frontend**: login/cadastro, listagem e gestão do estoque, registro de consumo e visualização dos gastos (com gráfico).
 
+Duas formas de rodar: backend e frontend separados (seções 2 e 3), ou tudo de uma vez com `docker compose up --build` (seção 8).
+
 ---
 
 ## 2. Como rodar o backend
@@ -272,6 +274,33 @@ Dado o prazo do desafio, alguns pontos foram deliberadamente deixados de fora do
 | **Sem rate limiting em `/auth/login`** | Não há limite de tentativas de senha por IP/usuário — um atacante pode tentar força bruta indefinidamente. Implementar isso bem (armazenamento de contadores, janelas de tempo, resposta consistente) é um escopo à parte do desafio em si. | Middleware de rate limiting (ex.: `slowapi`/`fastapi-limiter` com Redis) por IP e por e-mail, ou bloqueio temporário de conta após N tentativas falhas seguidas. Em produção, isso também costuma ficar no API gateway/WAF, não só na aplicação. |
 | **Sem limpeza automática de sessões expiradas** | `get_current_user` já trata sessão expirada como não-autenticado (`expira_em < agora`), então não é um bug funcional — mas a linha nunca é removida da tabela `sessoes`, que cresce indefinidamente. | Um job periódico (cron, ou Celery beat) rodando `DELETE FROM sessoes WHERE expira_em < now()`, ou aproveitar o próprio `POST /auth/login` para apagar sessões expiradas do mesmo usuário antes de criar uma nova. |
 | **Sem lock explícito na checagem de estoque antes de gravar a saída** | `registrar_movimentacao` lê `item.quantidade`, decide se há estoque suficiente, e só depois grava — sem lock entre a leitura e a escrita. Em teoria, duas saídas simultâneas do mesmo item poderiam ambas "ver" estoque suficiente e deixar a quantidade negativa. Na prática, o SQLite usado aqui serializa escritas dentro de um único processo, então o risco real é baixíssimo neste escopo. | Em Postgres com múltiplos workers, a proteção correta seria `SELECT ... FOR UPDATE` na linha do item dentro da transação (lock pessimista), ou uma constraint `CHECK (quantidade >= 0)` no banco como rede de segurança independente da aplicação. |
+| **Imagens Docker sem volume de código / hot-reload** | `docker-compose.yml` não monta o código como volume — as imagens copiam o código no build (`COPY . .`), então mudar um arquivo local não reflete no container rodando. Simples e previsível (a imagem é sempre exatamente o que foi commitado), mas exige `docker compose up --build` a cada mudança. | Montar `./backend:/app` e `./frontend:/app` como bind mount (com um volume nomeado separado para `node_modules`, para não sobrescrever o que foi instalado no build) e manter `--reload`/Vite HMR ativos — é o padrão para ambiente de desenvolvimento em Docker. |
+
+---
+
+## 8. Como rodar com Docker Compose
+
+Alternativa a rodar backend e frontend manualmente (seções 2 e 3): sobe os dois serviços com um único comando, cada um na sua própria imagem.
+
+```powershell
+copy backend\.env.example backend\.env    # se ainda nao existir — o compose le esse arquivo
+docker compose up --build
+```
+
+- Backend em `http://localhost:8000` (`/docs` para o Swagger).
+- Frontend em `http://localhost:5173`.
+- `Ctrl+C` para parar; `docker compose down` remove os containers (os dados do banco continuam no volume nomeado `backend_data`); `docker compose down -v` remove o volume também, apagando os dados.
+
+Rodar de novo depois de mudar código exige `--build` (as imagens são construídas uma vez, com o código copiado para dentro — não há volume de código montado, então elas não atualizam sozinhas; ver seção 7).
+
+**O que cada `Dockerfile` faz:**
+
+- **`backend/Dockerfile`**: parte de `python:3.13-slim`, instala as dependências do `requirements.txt`, copia o código, e sobe `uvicorn main:app --host 0.0.0.0 --port 8000`. O `--host 0.0.0.0` é obrigatório — sem ele o uvicorn só aceita conexões de dentro do próprio container, mesmo com a porta publicada no `docker-compose.yml`.
+- **`frontend/Dockerfile`**: parte de `node:22-slim`, instala as dependências via `npm ci` (instala exatamente o que está no `package-lock.json`, mais rápido e previsível que `npm install` para builds), copia o código, e sobe `npm run dev -- --host 0.0.0.0` — mesmo motivo do `--host` do backend: o Vite por padrão só escuta em `localhost` dentro do container.
+
+**Como os dois serviços se comunicam:** na verdade, o backend e o frontend **não conversam entre si dentro da rede do Docker**. Quem fala com o backend é o **navegador**, rodando na máquina host — e o frontend é só uma SPA (React) que o navegador baixa e executa localmente. Por isso `src/api/client.ts` continua apontando para `http://localhost:8000` mesmo em Docker: graças ao mapeamento de portas (`ports: "8000:8000"` no `docker-compose.yml`), o container do backend fica acessível em `localhost:8000` a partir do host — que é exatamente onde o navegador está. Se o frontend tentasse chamar `http://backend:8000` (o nome do serviço, que só existe na rede interna do Docker), o navegador não conseguiria resolver esse endereço, porque `backend` só é um hostname válido *para outros containers*, não para a máquina host.
+
+**Persistência do banco:** o `docker-compose.yml` sobrescreve `DATABASE_URL` para `sqlite:///./data/geladeira.db` e monta um volume nomeado (`backend_data`) em `/app/data` dentro do container do backend. Isso separa o ciclo de vida dos dados do ciclo de vida do container: `docker compose down` (sem `-v`) remove os containers, mas o volume continua existindo, então o próximo `docker compose up` volta com os mesmos dados — testado no desenvolvimento deste projeto (cadastrei um usuário, derrubei e subi os containers de novo, o login continuou funcionando).
 
 ---
 
@@ -283,4 +312,6 @@ Dado o prazo do desafio, alguns pontos foram deliberadamente deixados de fora do
 - **Arquitetura em camadas:** `routers` (protocolo) → `services` (regra de negócio) → `models`/`schemas` (persistência vs. contrato de API) no backend; `pages` (UI) → `hooks` (dados) no frontend — cada camada muda por um motivo diferente.
 - **Modelagem:** `movimentacoes` é o histórico de auditoria (entrada/saída, `usuario_id`, `valor_total` calculado no backend); por isso a exclusão de um item com movimentações é bloqueada (`409`) em vez de fazer cascade — apagar o item não pode apagar o histórico de gastos de quem consumiu.
 - **Stack:** FastAPI + SQLAlchemy + SQLite no backend (tipado, autodocumentado, troca de banco é só mudar `DATABASE_URL`); Vite + React + TypeScript + Tailwind no frontend (tipagem end-to-end, build rápido).
-- **Trade-offs conscientes e por quê:** sem rate limiting no login, sem limpeza de sessões expiradas, sem lock explícito na checagem de estoque — todos de baixo risco real no escopo atual, todos com uma solução conhecida e citável para produção (seção 7).
+- **Testes automatizados:** `pytest` + `TestClient` do FastAPI em `backend/tests/`, rodando contra um SQLite isolado (nunca o banco de desenvolvimento) — cobrem autenticação, proteção de rota, movimentação de estoque/gastos e o bloqueio de exclusão de item com histórico (regressão do bug do cascade delete).
+- **Docker:** `docker-compose.yml` sobe backend e frontend em containers separados; eles não se comunicam pela rede interna do Docker — é o navegador, no host, que fala com os dois via `localhost` graças ao mapeamento de portas. O banco SQLite persiste num volume nomeado entre `down`/`up`.
+- **Trade-offs conscientes e por quê:** sem rate limiting no login, sem limpeza de sessões expiradas, sem lock explícito na checagem de estoque, sem hot-reload nas imagens Docker — todos de baixo risco real no escopo atual, todos com uma solução conhecida e citável para produção (seção 7).
