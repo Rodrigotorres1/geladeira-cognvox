@@ -12,6 +12,9 @@ ENV/
 .pytest_cache/
 .ruff_cache/
 
+# Banco de teste temporario (criado e apagado pela suite do pytest)
+backend/tests/test.db
+
 # Node
 node_modules/
 npm-debug.log*
