@@ -12,7 +12,17 @@ Aplicação full stack para controle de estoque de uma **geladeira compartilhada
 - **Backend**: autenticação por sessão (cookie `HttpOnly`), CRUD de itens, registro de movimentações (entrada/saída) e relatório de gastos por período.
 - **Frontend**: login/cadastro, listagem e gestão do estoque, registro de consumo e visualização dos gastos (com gráfico).
 
-Duas formas de rodar: backend e frontend separados (seções 2 e 3), ou tudo de uma vez com `docker compose up --build` (seção 8).
+### Deploy funcional (versão live)
+
+A aplicação está publicada e funcionando — dá para testar o fluxo completo (cadastro, login, estoque, movimentações, gastos) sem instalar nada localmente:
+
+- **Frontend (Vercel):** https://geladeira-cognvox.vercel.app
+- **Backend (Render):** https://geladeira-backend-2x97.onrender.com
+- **Documentação interativa da API / Swagger:** https://geladeira-backend-2x97.onrender.com/docs
+
+**Cold start:** o backend está no plano gratuito do Render, que hiberna o serviço após um período sem uso. Se a primeira requisição (ex.: a tela de login) demorar até uns 50 segundos para responder, é isso — o serviço está "acordando"; as próximas requisições voltam ao normal.
+
+Três formas de ver o projeto funcionando: a versão live acima (mais rápido, nada pra instalar), backend e frontend rodando localmente (seções 2 e 3), ou tudo de uma vez com `docker compose up --build` (seção 8).
 
 ---
 
@@ -54,7 +64,7 @@ npm run dev
 
 Abre em `http://localhost:5173`. O backend precisa estar rodando em `http://localhost:8000` (seção 2) — o `FRONTEND_ORIGIN` do `.env` do backend já vem configurado para `http://localhost:5173` por padrão, então CORS com cookies funciona sem ajuste extra.
 
-**Sobre a URL da API:** o frontend não tem variável de ambiente hoje — a URL do backend é fixa em [`frontend/src/api/client.ts`](frontend/src/api/client.ts) (`http://localhost:8000`), porque o projeto roda inteiro em local. Numa aplicação real isso viraria uma env var (`VITE_API_URL`, lida via `import.meta.env`) para apontar para um backend diferente em cada ambiente de deploy — ver seção 7.
+**Sobre a URL da API:** vem de `VITE_API_URL` (ver seção 4), lida em [`frontend/src/api/client.ts`](frontend/src/api/client.ts) via `import.meta.env`. Sem essa variável definida, cai no fallback `http://localhost:8000` — por isso `npm run dev` funciona direto, sem precisar criar nenhum `.env` local.
 
 ---
 
@@ -71,9 +81,11 @@ Abre em `http://localhost:5173`. O backend precisa estar rodando em `http://loca
 
 `SECRET_KEY` e `DATABASE_URL` nunca são commitados — só `.env.example` (com valores de exemplo/placeholder) fica versionado; `.env` está no `.gitignore`.
 
-### Frontend
+### Frontend (`frontend/.env`, a partir de `frontend/.env.example`)
 
-Não há `.env` no frontend hoje. A única configuração externa (URL do backend) está hardcoded em `src/api/client.ts` — ver nota na seção 3 e o trade-off na seção 7.
+| Variável | Obrigatória | Exemplo | Descrição |
+|---|---|---|---|
+| `VITE_API_URL` | Não (default `http://localhost:8000`) | `https://geladeira-backend-2x97.onrender.com` | URL base do backend. Em local pode ficar sem definir (usa o fallback); em produção (Vercel) precisa apontar pro backend real |
 
 ---
 
@@ -253,7 +265,7 @@ Todas as chaves primárias (`usuarios`, `itens_estoque`, `movimentacoes`, `sesso
 Login não devolve um token (JWT ou similar) no corpo da resposta para o frontend guardar. Em vez disso:
 
 1. `POST /auth/login` valida e-mail/senha e cria uma linha na tabela `sessoes` (`id`, `usuario_id`, `expira_em` = agora + 7 dias).
-2. O `id` dessa sessão é assinado com `itsdangerous` (usando `SECRET_KEY`) e devolvido num cookie `session_id` com `HttpOnly=True`, `SameSite=Lax` e `Secure` (ligado fora de `ENVIRONMENT=local`).
+2. O `id` dessa sessão é assinado com `itsdangerous` (usando `SECRET_KEY`) e devolvido num cookie `session_id` com `HttpOnly=True`. `SameSite` e `Secure` dependem de `ENVIRONMENT`: `Lax` sem `Secure` em `local` (backend e frontend contam como "mesmo site" para o navegador, já que `SameSite` ignora a porta); `None` com `Secure=True` fora de `local` — obrigatório em produção, onde Vercel e Render são domínios diferentes de verdade (cross-site) e o navegador só envia cookie cross-site com `SameSite=None`, que por sua vez exige `Secure`.
 3. Em toda requisição a uma rota protegida, o navegador manda o cookie automaticamente (por isso o frontend usa `withCredentials: true` e o CORS precisa de `allow_credentials=True` com uma origem explícita — nunca `*`). O backend lê o cookie, confere a assinatura e verifica no banco se a sessão existe e não expirou.
 4. `POST /auth/logout` apaga a linha da sessão no banco e remove o cookie — a sessão morre no servidor, não só no navegador.
 
@@ -315,7 +327,8 @@ Rodar de novo depois de mudar código exige `--build` (as imagens são construí
 
 ## Resumo para revisão rápida (roteiro de entrevista)
 
-- **Autenticação:** sessão via cookie `HttpOnly` + `SameSite=Lax` + `Secure` (fora de local), id da sessão assinado com `itsdangerous`, sessão validada no banco (revogável no logout) — nunca JWT autocontido, nunca token em `localStorage`.
+- **Autenticação:** sessão via cookie `HttpOnly`, id da sessão assinado com `itsdangerous`, sessão validada no banco (revogável no logout) — nunca JWT autocontido, nunca token em `localStorage`. `SameSite`/`Secure` mudam com `ENVIRONMENT`: `Lax` sem `Secure` em local, `None` com `Secure` em produção (Vercel + Render são domínios diferentes — cross-site de verdade).
+- **Deploy:** frontend na Vercel, backend no Render — domínios diferentes, então o cookie de sessão só funciona cross-site graças ao `SameSite=None`+`Secure` condicional acima; `VITE_API_URL` (frontend) e `FRONTEND_ORIGIN` (backend) apontam um pro outro via variável de ambiente, nunca hardcoded.
 - **Senha:** hash bcrypt via `passlib`, nunca texto puro; `max_length=72` no schema porque o próprio bcrypt trunca/rejeita além disso.
 - **UUID em vez de ID incremental:** evita IDOR/enumeração de recursos (`/itens/1`, `/itens/2`...) em todas as tabelas com dado sensível ou vinculado a usuário.
 - **Arquitetura em camadas:** `routers` (protocolo) → `services` (regra de negócio) → `models`/`schemas` (persistência vs. contrato de API) no backend; `pages` (UI) → `hooks` (dados) no frontend — cada camada muda por um motivo diferente.
