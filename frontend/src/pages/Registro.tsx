@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
+import { extrairMensagemErro } from '../lib/erros'
 
 export function Registro() {
   const { registro } = useAuth()
@@ -22,8 +23,8 @@ export function Registro() {
     try {
       await registro(nome, email, senha)
       navigate('/estoque')
-    } catch {
-      setErro('Não foi possível criar a conta (email já cadastrado ou senha muito curta)')
+    } catch (err) {
+      setErro(extrairMensagemErro(err, 'Não foi possível criar a conta. Tente novamente.'))
     } finally {
       setEnviando(false)
     }

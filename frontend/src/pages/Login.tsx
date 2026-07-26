@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
+import { extrairMensagemErro } from '../lib/erros'
 
 export function Login() {
   const { login } = useAuth()
@@ -21,8 +22,8 @@ export function Login() {
     try {
       await login(email, senha)
       navigate('/estoque')
-    } catch {
-      setErro('Email ou senha inválidos')
+    } catch (err) {
+      setErro(extrairMensagemErro(err, 'Não foi possível entrar. Tente novamente.'))
     } finally {
       setEnviando(false)
     }
