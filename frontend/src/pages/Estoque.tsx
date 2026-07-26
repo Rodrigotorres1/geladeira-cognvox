@@ -132,8 +132,8 @@ export function Estoque() {
     setErroAcao(null)
     try {
       await removerItem(item.id)
-    } catch {
-      setErroAcao(`Não foi possível remover "${item.nome}".`)
+    } catch (err) {
+      setErroAcao(extrairMensagemErro(err, `Não foi possível remover "${item.nome}".`))
     }
   }
 
