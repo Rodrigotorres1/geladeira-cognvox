@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Diretorio onde o SQLite grava o arquivo do banco quando DATABASE_URL
-# aponta para ./data/geladeira.db (ver docker-compose.yml) — precisa
+# aponta para ./data/cilindros.db (ver docker-compose.yml) — precisa
 # existir antes do volume nomeado ser montado em cima dele.
 RUN mkdir -p data
 

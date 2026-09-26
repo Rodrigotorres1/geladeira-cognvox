@@ -6,11 +6,15 @@ TEST_DB_PATH = Path(__file__).parent / "test.db"
 # Precisa rodar ANTES de qualquer import de app.*: app.core.database cria o
 # engine (bind fixo nessa URL) assim que o modulo e importado pela primeira
 # vez no processo. Definindo a env var aqui, o app inteiro nasce ja apontando
-# para o banco de teste — os testes nunca tocam backend/geladeira.db.
+# para o banco de teste — os testes nunca tocam backend/cilindros.db.
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
 os.environ["SECRET_KEY"] = "chave-secreta-somente-para-os-testes"
 os.environ["FRONTEND_ORIGIN"] = "http://localhost:5173"
 os.environ["ENVIRONMENT"] = "local"
+
+# create_all nao altera tabelas que ja existem: se sobrou um test.db de uma
+# execucao interrompida (com schema antigo), ele e descartado antes de tudo.
+TEST_DB_PATH.unlink(missing_ok=True)
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -19,12 +23,13 @@ from sqlalchemy import text  # noqa: E402
 from app.core.database import Base, SessionLocal, engine  # noqa: E402
 from app.schemas.auth import UsuarioCriar  # noqa: E402
 from app.services import auth_service  # noqa: E402
+from auxiliares import dias  # noqa: E402
 from main import app  # noqa: E402
 
 Base.metadata.create_all(bind=engine)
 
 # Ordem que respeita as foreign keys: filhos antes dos pais.
-TABELAS_PARA_LIMPAR = ["movimentacoes", "sessoes", "itens_estoque", "usuarios"]
+TABELAS_PARA_LIMPAR = ["movimentacoes", "sessoes", "lotes", "tipos_cilindro", "usuarios"]
 
 
 @pytest.fixture(autouse=True)
@@ -73,14 +78,49 @@ def usuario_logado(client, usuaria_cadastrada):
 
 
 @pytest.fixture
-def item_criado(usuario_logado):
-    """Cria um item de estoque com o usuario_logado e devolve o item criado."""
-    resposta = usuario_logado.post(
-        "/itens",
-        json={"nome": "Item de teste", "quantidade": 10, "unidade": "un", "valor_unitario": 5.0},
-    )
-    assert resposta.status_code == 201
-    return resposta.json()
+def criar_tipo(usuario_logado):
+    """Fabrica de tipos de cilindro: criar_tipo(nome=..., estoque_minimo=...)."""
+
+    def _criar(nome="Cilindro 10L", estoque_minimo=2, **extras):
+        resposta = usuario_logado.post(
+            "/tipos", json={"nome": nome, "estoque_minimo": estoque_minimo, **extras}
+        )
+        assert resposta.status_code == 201, resposta.text
+        return resposta.json()
+
+    return _criar
+
+
+@pytest.fixture
+def tipo_criado(criar_tipo):
+    return criar_tipo()
+
+
+@pytest.fixture
+def entrada(usuario_logado):
+    """Registra uma entrada e devolve a movimentacao criada (com o lote)."""
+
+    def _entrada(tipo_id, quantidade=10, vencimento_em_dias=90, **extras):
+        resposta = usuario_logado.post(
+            "/movimentacoes/entrada",
+            json={
+                "tipo_id": tipo_id,
+                "data_vencimento": dias(vencimento_em_dias),
+                "quantidade": quantidade,
+                **extras,
+            },
+        )
+        assert resposta.status_code == 201, resposta.text
+        return resposta.json()
+
+    return _entrada
+
+
+@pytest.fixture
+def lote_com_estoque(usuario_logado, tipo_criado, entrada):
+    """Lote com 10 cilindros vencendo em 90 dias, como aparece em GET /lotes."""
+    lote_id = entrada(tipo_criado["id"])["lote"]["id"]
+    return next(lote for lote in usuario_logado.get("/lotes").json() if lote["id"] == lote_id)
 
 
 def pytest_sessionfinish(session, exitstatus):

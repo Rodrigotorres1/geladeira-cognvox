@@ -1,5 +1,5 @@
 from app.core.database import Base, engine
-from app.models import ItemEstoque, Movimentacao, Usuario  # noqa: F401
+from app.models import Lote, Movimentacao, Sessao, TipoCilindro, Usuario  # noqa: F401
 
 
 def init_db() -> None:

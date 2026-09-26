@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routers import auth, itens, movimentacoes, relatorios
+from app.routers import auth, lotes, movimentacoes, tipos
 from init_db import init_db
 
 settings = get_settings()
@@ -16,7 +16,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Sistema de Controle de Estoque de Geladeira", lifespan=lifespan)
+app = FastAPI(title="Controle de Cilindros de Oxigenio", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,9 +28,9 @@ app.add_middleware(
 
 
 app.include_router(auth.router)
-app.include_router(itens.router)
+app.include_router(tipos.router)
+app.include_router(lotes.router)
 app.include_router(movimentacoes.router)
-app.include_router(relatorios.router)
 
 
 @app.get("/health")

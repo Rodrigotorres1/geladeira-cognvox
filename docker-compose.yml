@@ -9,7 +9,7 @@ services:
       # Sobrescreve o DATABASE_URL do .env: dentro do container o banco
       # fica em ./data (montada como volume nomeado abaixo), para persistir
       # entre "docker compose down"/"up" sem depender do FS do host.
-      DATABASE_URL: sqlite:///./data/geladeira.db
+      DATABASE_URL: sqlite:///./data/cilindros.db
     volumes:
       - backend_data:/app/data
 
