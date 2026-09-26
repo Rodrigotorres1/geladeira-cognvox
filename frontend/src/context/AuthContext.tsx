@@ -13,7 +13,6 @@ interface AuthContextValue {
   usuario: Usuario | null
   carregando: boolean
   login: (email: string, senha: string) => Promise<void>
-  registro: (nome: string, email: string, senha: string) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -38,20 +37,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsuario(resposta.data)
   }
 
-  async function registro(nome: string, email: string, senha: string) {
-    await api.post('/auth/registro', { nome, email, senha })
-    // /auth/registro só cria o usuário, não abre sessão (não define cookie);
-    // por isso logamos em seguida com as mesmas credenciais.
-    await login(email, senha)
-  }
-
   async function logout() {
     await api.post('/auth/logout')
     setUsuario(null)
   }
 
   return (
-    <AuthContext.Provider value={{ usuario, carregando, login, registro, logout }}>
+    <AuthContext.Provider value={{ usuario, carregando, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

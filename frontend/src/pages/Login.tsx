@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
@@ -55,12 +55,6 @@ export function Login() {
             {enviando ? 'Entrando...' : 'Entrar'}
           </Button>
         </form>
-        <p className="mt-4 text-center text-sm text-gray-600">
-          Não tem conta?{' '}
-          <Link to="/registro" className="text-primary font-medium hover:underline">
-            Cadastre-se
-          </Link>
-        </p>
       </Card>
     </div>
   )

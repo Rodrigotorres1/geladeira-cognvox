@@ -17,6 +17,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
 from app.core.database import Base, SessionLocal, engine  # noqa: E402
+from app.schemas.auth import UsuarioCriar  # noqa: E402
+from app.services import auth_service  # noqa: E402
 from main import app  # noqa: E402
 
 Base.metadata.create_all(bind=engine)
@@ -46,13 +48,25 @@ def client():
 
 
 @pytest.fixture
-def usuario_logado(client):
-    """Registra e loga um usuario; devolve o client com o cookie de sessao
-    ja setado, pronto para chamar rotas protegidas."""
+def usuaria_cadastrada():
+    """Cria a usuaria direto pelo service (nao existe cadastro pela API) e
+    devolve os dados usados, incluindo a senha em texto puro para o login."""
     dados = {"nome": "Usuaria Teste", "email": "usuaria@teste.com", "senha": "senha1234"}
-    client.post("/auth/registro", json=dados)
+    db = SessionLocal()
+    try:
+        auth_service.registrar_usuario(db, UsuarioCriar(**dados))
+    finally:
+        db.close()
+    return dados
+
+
+@pytest.fixture
+def usuario_logado(client, usuaria_cadastrada):
+    """Loga a usuaria cadastrada; devolve o client com o cookie de sessao
+    ja setado, pronto para chamar rotas protegidas."""
     resposta = client.post(
-        "/auth/login", json={"email": dados["email"], "senha": dados["senha"]}
+        "/auth/login",
+        json={"email": usuaria_cadastrada["email"], "senha": usuaria_cadastrada["senha"]},
     )
     assert resposta.status_code == 200
     return client

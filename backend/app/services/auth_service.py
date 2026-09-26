@@ -6,10 +6,14 @@ from sqlalchemy.orm import Session
 from app.core.security import SESSION_DURATION, hash_password, verify_password
 from app.models.sessao import Sessao
 from app.models.usuario import Usuario
-from app.schemas.auth import UsuarioRegistro
+from app.schemas.auth import RedefinicaoSenha, UsuarioCriar
 
 
-class EmailJaCadastradoError(Exception):
+class UsuarioJaExisteError(Exception):
+    pass
+
+
+class UsuarioNaoEncontradoError(Exception):
     pass
 
 
@@ -17,10 +21,11 @@ class CredenciaisInvalidasError(Exception):
     pass
 
 
-def registrar_usuario(db: Session, dados: UsuarioRegistro) -> Usuario:
-    email_existente = db.query(Usuario).filter(Usuario.email == dados.email).first()
-    if email_existente is not None:
-        raise EmailJaCadastradoError()
+def registrar_usuario(db: Session, dados: UsuarioCriar) -> Usuario:
+    # O sistema tem uma unica usuaria: qualquer usuario ja cadastrado (mesmo
+    # com outro e-mail) bloqueia a criacao. Trocar a senha e redefinir_senha.
+    if db.query(Usuario.id).first() is not None:
+        raise UsuarioJaExisteError()
 
     usuario = Usuario(
         nome=dados.nome,
@@ -28,6 +33,17 @@ def registrar_usuario(db: Session, dados: UsuarioRegistro) -> Usuario:
         senha_hash=hash_password(dados.senha),
     )
     db.add(usuario)
+    db.commit()
+    db.refresh(usuario)
+    return usuario
+
+
+def redefinir_senha(db: Session, dados: RedefinicaoSenha) -> Usuario:
+    usuario = db.query(Usuario).filter(Usuario.email == dados.email).first()
+    if usuario is None:
+        raise UsuarioNaoEncontradoError()
+
+    usuario.senha_hash = hash_password(dados.senha)
     db.commit()
     db.refresh(usuario)
     return usuario

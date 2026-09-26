@@ -4,7 +4,6 @@ import { RequireAuth } from './components/RequireAuth'
 import { Estoque } from './pages/Estoque'
 import { Gastos } from './pages/Gastos'
 import { Login } from './pages/Login'
-import { Registro } from './pages/Registro'
 
 function App() {
   return (
@@ -12,7 +11,6 @@ function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/estoque" replace />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/registro" element={<Registro />} />
         <Route
           path="/estoque"
           element={

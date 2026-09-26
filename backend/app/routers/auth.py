@@ -13,20 +13,11 @@ from app.core.security import (
     unsign_session_id,
 )
 from app.models.usuario import Usuario
-from app.schemas.auth import UsuarioLogin, UsuarioOut, UsuarioRegistro
+from app.schemas.auth import UsuarioLogin, UsuarioOut
 from app.services import auth_service
 
+# Sem rota de cadastro: a unica usuaria e criada pelo criar_usuario.py.
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-@router.post("/registro", response_model=UsuarioOut, status_code=status.HTTP_201_CREATED)
-def registro(dados: UsuarioRegistro, db: Session = Depends(get_db)):
-    try:
-        return auth_service.registrar_usuario(db, dados)
-    except auth_service.EmailJaCadastradoError:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email ja cadastrado"
-        )
 
 
 @router.post("/login", response_model=UsuarioOut)
