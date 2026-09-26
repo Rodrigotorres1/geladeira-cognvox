@@ -27,7 +27,7 @@ def registrar_entrada(
         return movimentacoes_service.registrar_entrada(db, dados, usuario_atual.id)
     except tipos_service.TipoNaoEncontradoError:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de cilindro nao encontrado"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de cilindro não encontrado"
         )
 
 
@@ -40,9 +40,9 @@ def registrar_saida(
     try:
         return movimentacoes_service.registrar_saida(db, dados, usuario_atual.id)
     except lotes_service.LoteNaoEncontradoError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lote nao encontrado")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lote não encontrado")
     except movimentacoes_service.EstoqueInsuficienteError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Quantidade maior que a disponivel no lote",
+            detail="Quantidade maior que a disponível no lote",
         )

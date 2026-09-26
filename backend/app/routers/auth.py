@@ -26,7 +26,7 @@ def login(dados: UsuarioLogin, response: Response, db: Session = Depends(get_db)
         usuario = auth_service.autenticar_usuario(db, dados.email, dados.senha)
     except auth_service.CredenciaisInvalidasError:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Email ou senha invalidos"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="E-mail ou senha inválidos"
         )
 
     sessao = auth_service.criar_sessao(db, usuario)

@@ -65,7 +65,7 @@ def get_current_user(
 ) -> Usuario:
     nao_autenticado = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Nao autenticado",
+        detail="Não autenticado",
     )
 
     if session_id is None:

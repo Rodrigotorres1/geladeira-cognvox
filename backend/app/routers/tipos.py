@@ -13,13 +13,13 @@ router = APIRouter(prefix="/tipos", tags=["tipos"], dependencies=[Depends(get_cu
 
 def _tipo_nao_encontrado() -> HTTPException:
     return HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de cilindro nao encontrado"
+        status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de cilindro não encontrado"
     )
 
 
 def _tipo_duplicado() -> HTTPException:
     return HTTPException(
-        status_code=status.HTTP_409_CONFLICT, detail="Ja existe um tipo de cilindro com esse nome"
+        status_code=status.HTTP_409_CONFLICT, detail="Já existe um tipo de cilindro com esse nome"
     )
 
 
@@ -55,5 +55,5 @@ def remover_tipo(tipo_id: uuid.UUID, db: Session = Depends(get_db)):
     except tipos_service.TipoComLotesError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Nao e possivel excluir um tipo que ja tem lotes registrados",
+            detail="Não é possível excluir um tipo que já tem lotes registrados",
         )

@@ -25,9 +25,9 @@ def atualizar_lote(lote_id: uuid.UUID, dados: LoteAtualizar, db: Session = Depen
     try:
         return lotes_service.atualizar(db, lote_id, dados)
     except lotes_service.LoteNaoEncontradoError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lote nao encontrado")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lote não encontrado")
     except lotes_service.LoteDuplicadoError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Ja existe outro lote desse tipo com esse vencimento",
+            detail="Já existe outro lote desse tipo com essa data de teste",
         )

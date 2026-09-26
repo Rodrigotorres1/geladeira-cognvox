@@ -1,25 +1,28 @@
+import type { LoteResumo } from './lote'
+
 export type TipoMovimentacao = 'entrada' | 'saida'
 
-export interface MovimentacaoOut {
+export interface Movimentacao {
   id: string
-  item_id: string
+  lote: LoteResumo
   usuario_id: string
   tipo: TipoMovimentacao
   quantidade: number
-  valor_total: string
+  observacao: string | null
   criado_em: string
 }
 
-export interface RelatorioGastos {
-  usuario_id: string
-  data_inicio: string
-  data_fim: string
-  total_gasto: string
-  movimentacoes: MovimentacaoOut[]
+export interface EntradaPayload {
+  tipo_id: string
+  // Texto: o backend interpreta "MM/AAAA", "M/AAAA" ou "AAAA".
+  data_teste: string
+  quantidade: number
+  numero_lote: string | null
+  observacao: string | null
 }
 
-export interface MovimentacaoCriarPayload {
-  item_id: string
-  tipo: TipoMovimentacao
+export interface SaidaPayload {
+  lote_id: string
   quantidade: number
+  observacao: string | null
 }

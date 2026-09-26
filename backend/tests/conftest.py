@@ -23,7 +23,7 @@ from sqlalchemy import text  # noqa: E402
 from app.core.database import Base, SessionLocal, engine  # noqa: E402
 from app.schemas.auth import UsuarioCriar  # noqa: E402
 from app.services import auth_service  # noqa: E402
-from auxiliares import dias  # noqa: E402
+from auxiliares import mes_ano  # noqa: E402
 from main import app  # noqa: E402
 
 Base.metadata.create_all(bind=engine)
@@ -100,12 +100,14 @@ def tipo_criado(criar_tipo):
 def entrada(usuario_logado):
     """Registra uma entrada e devolve a movimentacao criada (com o lote)."""
 
-    def _entrada(tipo_id, quantidade=10, vencimento_em_dias=90, **extras):
+    def _entrada(tipo_id, data_teste=None, quantidade=10, **extras):
+        # Sem data_teste: teste feito no mes atual, ou seja, lote "ok" (vence
+        # daqui a validade_anos).
         resposta = usuario_logado.post(
             "/movimentacoes/entrada",
             json={
                 "tipo_id": tipo_id,
-                "data_vencimento": dias(vencimento_em_dias),
+                "data_teste": data_teste or mes_ano(0),
                 "quantidade": quantidade,
                 **extras,
             },
@@ -118,7 +120,7 @@ def entrada(usuario_logado):
 
 @pytest.fixture
 def lote_com_estoque(usuario_logado, tipo_criado, entrada):
-    """Lote com 10 cilindros vencendo em 90 dias, como aparece em GET /lotes."""
+    """Lote com 10 cilindros testados no mes atual, como aparece em GET /lotes."""
     lote_id = entrada(tipo_criado["id"])["lote"]["id"]
     return next(lote for lote in usuario_logado.get("/lotes").json() if lote["id"] == lote_id)
 

@@ -8,6 +8,7 @@ from app.models.lote import Lote
 from app.models.tipo_cilindro import TipoCilindro
 from app.schemas.tipos import TipoAtualizar, TipoCriar, TipoOut
 from app.services import alertas
+from app.services.data_teste import calcular_vencimento
 
 
 class TipoNaoEncontradoError(Exception):
@@ -23,12 +24,20 @@ class TipoComLotesError(Exception):
 
 
 def montar_tipo_out(tipo: TipoCilindro, hoje: date) -> TipoOut:
-    disponivel = alertas.estoque_disponivel(tipo.lotes, hoje)
+    disponivel = alertas.estoque_disponivel(
+        (
+            alertas.QuantidadeVencimento(
+                lote.quantidade, calcular_vencimento(lote.data_teste, tipo.validade_anos)
+            )
+            for lote in tipo.lotes
+        ),
+        hoje,
+    )
     return TipoOut(
         id=tipo.id,
         nome=tipo.nome,
         estoque_minimo=tipo.estoque_minimo,
-        dias_alerta=tipo.dias_alerta,
+        validade_anos=tipo.validade_anos,
         criado_em=tipo.criado_em,
         estoque_disponivel=disponivel,
         estoque_baixo=alertas.estoque_baixo(disponivel, tipo.estoque_minimo),
@@ -63,7 +72,7 @@ def criar(db: Session, dados: TipoCriar) -> TipoOut:
     tipo = TipoCilindro(
         nome=dados.nome,
         estoque_minimo=dados.estoque_minimo,
-        dias_alerta=dados.dias_alerta,
+        validade_anos=dados.validade_anos,
     )
     db.add(tipo)
     db.commit()
@@ -76,7 +85,7 @@ def atualizar(db: Session, tipo_id: uuid.UUID, dados: TipoAtualizar) -> TipoOut:
     _garantir_nome_livre(db, dados.nome, ignorar_id=tipo_id)
     tipo.nome = dados.nome
     tipo.estoque_minimo = dados.estoque_minimo
-    tipo.dias_alerta = dados.dias_alerta
+    tipo.validade_anos = dados.validade_anos
     db.commit()
     db.refresh(tipo)
     return montar_tipo_out(tipo, alertas.data_hoje())

@@ -1,58 +1,91 @@
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from app.services.alertas import data_hoje, estoque_baixo, estoque_disponivel, status_lote
+import pytest
 
-HOJE = date(2026, 9, 26)
+from app.services.alertas import (
+    QuantidadeVencimento,
+    data_hoje,
+    estoque_baixo,
+    estoque_disponivel,
+    meses_restantes,
+    status_lote,
+)
+from app.services.data_teste import calcular_vencimento, formatar_vencimento
 
+# Teste hidrostatico em 04/2016, validade de 10 anos -> vence em 04/2026.
+VENCIMENTO_ABRIL_2026 = calcular_vencimento(date(2016, 4, 1), 10)
 
-@dataclass
-class LoteFake:
-    quantidade: int
-    data_vencimento: date
-
-
-def test_lote_com_vencimento_anterior_a_hoje_esta_vencido():
-    assert status_lote(HOJE - timedelta(days=1), dias_alerta=30, hoje=HOJE) == "vencido"
-
-
-def test_lote_que_vence_hoje_vence_em_breve_e_nao_esta_vencido():
-    assert status_lote(HOJE, dias_alerta=30, hoje=HOJE) == "vence_em_breve"
-
-
-def test_lote_que_vence_exatamente_em_dias_alerta_vence_em_breve():
-    assert status_lote(HOJE + timedelta(days=30), dias_alerta=30, hoje=HOJE) == "vence_em_breve"
+# Teste so com ano "2016" (gravado como janeiro) -> vence em 01/2026.
+VENCIMENTO_SO_ANO_2016 = calcular_vencimento(date(2016, 1, 1), 10)
 
 
-def test_lote_que_vence_um_dia_depois_de_dias_alerta_esta_ok():
-    assert status_lote(HOJE + timedelta(days=31), dias_alerta=30, hoje=HOJE) == "ok"
+def test_vencimento_e_data_do_teste_mais_validade():
+    assert VENCIMENTO_ABRIL_2026 == date(2026, 4, 1)
+    assert formatar_vencimento(VENCIMENTO_ABRIL_2026) == "04/2026"
 
 
-def test_dias_alerta_zero_so_alerta_no_proprio_dia():
-    assert status_lote(HOJE, dias_alerta=0, hoje=HOJE) == "vence_em_breve"
-    assert status_lote(HOJE + timedelta(days=1), dias_alerta=0, hoje=HOJE) == "ok"
+def test_vencimento_do_teste_so_com_ano_e_janeiro_e_sai_com_mes():
+    assert VENCIMENTO_SO_ANO_2016 == date(2026, 1, 1)
+    assert formatar_vencimento(VENCIMENTO_SO_ANO_2016) == "01/2026"
 
 
-def test_dias_alerta_do_tipo_e_respeitado():
-    vencimento = HOJE + timedelta(days=10)
+def test_meses_restantes_ignora_o_dia():
+    assert meses_restantes(date(2026, 4, 1), date(2026, 4, 30)) == 0
+    assert meses_restantes(date(2026, 4, 1), date(2026, 5, 1)) == -1
+    assert meses_restantes(date(2026, 4, 1), date(2025, 9, 15)) == 7
+    assert meses_restantes(date(2027, 1, 1), date(2026, 12, 31)) == 1
 
-    assert status_lote(vencimento, dias_alerta=7, hoje=HOJE) == "ok"
-    assert status_lote(vencimento, dias_alerta=10, hoje=HOJE) == "vence_em_breve"
+
+@pytest.mark.parametrize(
+    "hoje, esperado",
+    [
+        (date(2025, 9, 1), "ok"),
+        (date(2025, 9, 30), "ok"),
+        (date(2025, 10, 1), "atencao"),
+        (date(2025, 12, 15), "atencao"),
+        (date(2026, 1, 31), "atencao"),
+        (date(2026, 2, 1), "urgente"),
+        (date(2026, 3, 15), "urgente"),
+        (date(2026, 4, 1), "urgente"),
+        # pode ser usado ate o fim do mes de vencimento
+        (date(2026, 4, 30), "urgente"),
+        (date(2026, 5, 1), "vencido"),
+        (date(2027, 1, 1), "vencido"),
+    ],
+)
+def test_status_do_lote_testado_em_04_2016(hoje, esperado):
+    assert status_lote(VENCIMENTO_ABRIL_2026, hoje) == esperado
+
+
+@pytest.mark.parametrize(
+    "hoje, esperado",
+    [
+        (date(2025, 6, 30), "ok"),
+        (date(2025, 7, 1), "atencao"),
+        (date(2025, 10, 31), "atencao"),
+        (date(2025, 11, 1), "urgente"),
+        (date(2026, 1, 31), "urgente"),
+        (date(2026, 2, 1), "vencido"),
+    ],
+)
+def test_status_do_lote_testado_so_com_ano_2016(hoje, esperado):
+    assert status_lote(VENCIMENTO_SO_ANO_2016, hoje) == esperado
 
 
 def test_estoque_disponivel_ignora_lotes_vencidos():
+    hoje = date(2026, 4, 15)
     lotes = [
-        LoteFake(quantidade=4, data_vencimento=HOJE - timedelta(days=1)),
-        LoteFake(quantidade=3, data_vencimento=HOJE),
-        LoteFake(quantidade=5, data_vencimento=HOJE + timedelta(days=90)),
+        QuantidadeVencimento(quantidade=4, vencimento=date(2026, 3, 1)),  # vencido
+        QuantidadeVencimento(quantidade=3, vencimento=date(2026, 4, 1)),  # vence este mes
+        QuantidadeVencimento(quantidade=5, vencimento=date(2030, 1, 1)),
     ]
 
-    assert estoque_disponivel(lotes, HOJE) == 8
+    assert estoque_disponivel(lotes, hoje) == 8
 
 
 def test_estoque_disponivel_sem_lotes_e_zero():
-    assert estoque_disponivel([], HOJE) == 0
+    assert estoque_disponivel([], date(2026, 4, 15)) == 0
 
 
 def test_estoque_baixo_quando_disponivel_menor_que_minimo():

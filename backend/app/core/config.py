@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     # servidor (Render/Docker) roda em UTC, que ja virou o dia seguinte
     # entre 21h e 24h no horario de Brasilia.
     timezone: str = "America/Sao_Paulo"
+    # Limites, em meses ate o vencimento do teste hidrostatico, para os
+    # alertas de lote "atencao" e "urgente" (ver alertas.status_lote).
+    meses_alerta_atencao: int = 6
+    meses_alerta_urgente: int = 2
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

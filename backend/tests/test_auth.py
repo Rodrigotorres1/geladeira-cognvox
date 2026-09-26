@@ -27,6 +27,7 @@ def test_login_com_senha_incorreta_falha(client, usuaria_cadastrada):
     )
 
     assert resposta.status_code == 401
+    assert resposta.json()["detail"] == "E-mail ou senha inválidos"
     assert "session_id" not in resposta.cookies
 
 

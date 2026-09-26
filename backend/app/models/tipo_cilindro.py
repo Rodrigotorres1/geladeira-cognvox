@@ -17,7 +17,8 @@ class TipoCilindro(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     nome: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     estoque_minimo: Mapped[int] = mapped_column(nullable=False)
-    dias_alerta: Mapped[int] = mapped_column(nullable=False, default=30)
+    # Validade do teste hidrostatico: vencimento do lote = data_teste + isso.
+    validade_anos: Mapped[int] = mapped_column(nullable=False, default=10)
     criado_em: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     # Sem cascade de delete: remover() em tipos_service.py bloqueia a exclusao
