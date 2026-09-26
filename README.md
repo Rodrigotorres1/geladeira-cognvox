@@ -1,28 +1,20 @@
-# Sistema de Controle de Estoque de Geladeira
+# Controle de Cilindros de Oxigênio
 
 ## 1. Sobre o projeto
 
-Aplicação full stack para controle de estoque de uma **geladeira compartilhada** entre colaboradores: cada pessoa cadastra e consome itens, e o sistema mantém o controle de quanto foi comprado, quanto foi consumido e **quanto cada usuário gastou** ao longo do tempo — sem depender de planilha ou de alguém lembrar de anotar manualmente.
+Aplicação full stack para controlar o estoque de cilindros de oxigênio de **uma única usuária**: quais cilindros existem, quando cada lote precisa de novo teste hidrostático e quais tipos estão abaixo do estoque mínimo. A tela foi pensada para uso no celular.
 
 ```
 /backend   # API em FastAPI + SQLAlchemy + SQLite
-/frontend  # Aplicação Vite + React + TypeScript
+/frontend  # Aplicação Vite + React + TypeScript + Tailwind
 ```
 
-- **Backend**: autenticação por sessão (cookie `HttpOnly`), CRUD de itens, registro de movimentações (entrada/saída) e relatório de gastos por período.
-- **Frontend**: login/cadastro, listagem e gestão do estoque, registro de consumo e visualização dos gastos (com gráfico).
+- **Backend**: autenticação por sessão (cookie `HttpOnly`), cadastro de tipos de cilindro, lotes identificados pela data do teste hidrostático, movimentações de entrada/saída com histórico e cálculo dos alertas.
+- **Frontend**: login, estoque por tipo com alertas, registro de entrada/saída, edição de lote, cadastro de tipos e histórico de movimentações.
 
-### Deploy funcional (versão live)
+Não existe cadastro público: a usuária é criada pelo script `backend/criar_usuario.py` (seção 2).
 
-A aplicação está publicada e funcionando — dá para testar o fluxo completo (cadastro, login, estoque, movimentações, gastos) sem instalar nada localmente:
-
-- **Frontend (Vercel):** https://geladeira-cognvox.vercel.app
-- **Backend (Render):** https://geladeira-backend-2x97.onrender.com
-- **Documentação interativa da API / Swagger:** https://geladeira-backend-2x97.onrender.com/docs
-
-**Cold start:** o backend está no plano gratuito do Render, que hiberna o serviço após um período sem uso. Se a primeira requisição (ex.: a tela de login) demorar até uns 50 segundos para responder, é isso — o serviço está "acordando"; as próximas requisições voltam ao normal.
-
-Três formas de ver o projeto funcionando: a versão live acima (mais rápido, nada pra instalar), backend e frontend rodando localmente (seções 2 e 3), ou tudo de uma vez com `docker compose up --build` (seção 8).
+A especificação funcional completa está em [`ESPEC.md`](ESPEC.md).
 
 ---
 
@@ -33,15 +25,26 @@ cd backend
 python -m venv venv                   # se o venv ainda não existir
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env                # depois ajuste os valores, veja a secao 4
+copy .env.example .env                # depois ajuste os valores, veja a seção 4
+python criar_usuario.py --nome "Maria" --email maria@exemplo.com
 uvicorn main:app --reload --port 8000
 ```
 
 Com o servidor rodando:
 - `http://localhost:8000/health` retorna `{"status": "ok"}`
-- `http://localhost:8000/docs` abre a documentação interativa (Swagger) gerada automaticamente pelo FastAPI — dá para testar todas as rotas por lá, inclusive o fluxo de login (o cookie é guardado pelo próprio navegador)
+- `http://localhost:8000/docs` abre a documentação interativa (Swagger), onde dá para testar todas as rotas, inclusive o login (o cookie fica no próprio navegador)
 
-As tabelas do banco (SQLite, arquivo `geladeira.db`) são criadas automaticamente na primeira vez que o servidor sobe.
+As tabelas do banco (SQLite, arquivo `cilindros.db`) são criadas automaticamente na primeira vez que o servidor sobe (ou que o `criar_usuario.py` roda).
+
+### Criando a usuária
+
+```powershell
+python criar_usuario.py --nome "Maria" --email maria@exemplo.com
+python criar_usuario.py --redefinir-senha --email maria@exemplo.com
+```
+
+- A senha é sempre pedida no terminal, com confirmação — nunca por argumento, para não ficar no histórico do shell. Mínimo de 8 e máximo de 72 caracteres.
+- Criar é recusado se já existir **qualquer** usuário (o sistema tem uma única usuária). Para trocar a senha, use `--redefinir-senha`.
 
 ### Rodando os testes
 
@@ -50,7 +53,7 @@ cd backend
 pytest -v
 ```
 
-Os 11 testes (`backend/tests/`) rodam contra um SQLite isolado (`tests/test.db`, criado e apagado automaticamente) — nunca tocam em `geladeira.db`, o banco de desenvolvimento.
+Os testes (`backend/tests/`) rodam contra um SQLite isolado (`tests/test.db`, criado e apagado automaticamente) — nunca tocam em `cilindros.db`. Cobrem autenticação, o script de usuária, tipos, lotes, movimentações, a interpretação da data do teste e as bordas dos alertas (com a data de "hoje" fixada).
 
 ---
 
@@ -62,9 +65,11 @@ npm install
 npm run dev
 ```
 
-Abre em `http://localhost:5173`. O backend precisa estar rodando em `http://localhost:8000` (seção 2) — o `FRONTEND_ORIGIN` do `.env` do backend já vem configurado para `http://localhost:5173` por padrão, então CORS com cookies funciona sem ajuste extra.
+Abre em `http://localhost:5173`. O backend precisa estar rodando em `http://localhost:8000` (seção 2) — o `FRONTEND_ORIGIN` do `.env` do backend já vem configurado para `http://localhost:5173`, então CORS com cookies funciona sem ajuste extra.
 
-**Sobre a URL da API:** vem de `VITE_API_URL` (ver seção 4), lida em [`frontend/src/api/client.ts`](frontend/src/api/client.ts) via `import.meta.env`. Sem essa variável definida, cai no fallback `http://localhost:8000` — por isso `npm run dev` funciona direto, sem precisar criar nenhum `.env` local.
+Verificações usadas no projeto: `npx tsc -b` (TypeScript strict) e `npm run lint` (oxlint).
+
+**Sobre a URL da API:** vem de `VITE_API_URL` (seção 4), lida em [`frontend/src/api/client.ts`](frontend/src/api/client.ts). Sem essa variável, cai no fallback `http://localhost:8000` — por isso `npm run dev` funciona direto, sem criar nenhum `.env` local.
 
 ---
 
@@ -74,266 +79,230 @@ Abre em `http://localhost:5173`. O backend precisa estar rodando em `http://loca
 
 | Variável | Obrigatória | Exemplo | Descrição |
 |---|---|---|---|
-| `DATABASE_URL` | Sim | `sqlite:///./geladeira.db` | String de conexão do banco (SQLite por padrão; uma URL do Postgres também funciona, já que o SQLAlchemy abstrai o driver) |
-| `SECRET_KEY` | Sim | `troque-por-um-valor-aleatorio-longo` | Chave usada para assinar o cookie de sessão (`itsdangerous`); sem ela a aplicação recusa subir. Deve ser um valor aleatório e secreto em produção |
+| `DATABASE_URL` | Sim | `sqlite:///./cilindros.db` | String de conexão do banco (SQLite por padrão; uma URL do Postgres também funciona, já que o SQLAlchemy abstrai o driver) |
+| `SECRET_KEY` | Sim | `troque-por-um-valor-aleatorio-longo` | Chave que assina o cookie de sessão (`itsdangerous`). Deve ser aleatória e secreta em produção |
 | `FRONTEND_ORIGIN` | Sim | `http://localhost:5173` | Origem permitida no CORS; precisa bater exatamente com a URL do frontend para os cookies de sessão funcionarem |
-| `ENVIRONMENT` | Não (default `local`) | `local` | `local` desliga o `Secure` do cookie (funciona em `http://`); qualquer outro valor (ex.: `production`) liga `Secure=True`, exigindo HTTPS |
+| `ENVIRONMENT` | Não (default `local`) | `local` | `local` desliga o `Secure` do cookie (funciona em `http://`); qualquer outro valor (ex.: `production`) liga `Secure=True` e `SameSite=None` |
+| `TIMEZONE` | Não (default `America/Sao_Paulo`) | `America/Sao_Paulo` | Fuso usado para decidir o que é "hoje" nos alertas e na validação de data futura |
+| `MESES_ALERTA_ATENCAO` | Não (default `6`) | `6` | Até quantos meses do vencimento o lote fica em "atenção" |
+| `MESES_ALERTA_URGENTE` | Não (default `2`) | `2` | Até quantos meses do vencimento o lote fica "urgente" |
 
-`SECRET_KEY` e `DATABASE_URL` nunca são commitados — só `.env.example` (com valores de exemplo/placeholder) fica versionado; `.env` está no `.gitignore`.
+`SECRET_KEY` e `DATABASE_URL` nunca são commitados — só `.env.example` fica versionado; `.env` está no `.gitignore`.
 
 ### Frontend (`frontend/.env`, a partir de `frontend/.env.example`)
 
 | Variável | Obrigatória | Exemplo | Descrição |
 |---|---|---|---|
-| `VITE_API_URL` | Não (default `http://localhost:8000`) | `https://geladeira-backend-2x97.onrender.com` | URL base do backend. Em local pode ficar sem definir (usa o fallback); em produção (Vercel) precisa apontar pro backend real |
+| `VITE_API_URL` | Não (default `http://localhost:8000`) | `https://api.exemplo.com` | URL base do backend. Em local pode ficar sem definir; em produção precisa apontar para o backend real |
 
 ---
 
-## 5. Rotas da API implementadas
+## 5. Regras de negócio
 
-Todas as rotas (exceto `/auth/registro` e `/auth/login`) exigem sessão válida via cookie `session_id` — sem ele, respondem `401 Unauthorized`.
+### Tipos, lotes e movimentações
 
-| Método | Rota | Autenticação | Descrição |
+- **Tipo de cilindro**: nome (único), estoque mínimo e validade do teste hidrostático em anos (padrão 10).
+- **Lote**: cilindros de um tipo com a mesma data de teste hidrostático. O vencimento **não é do gás, é do teste**: vencimento = data do teste + validade do tipo. Ele é calculado, não fica gravado — mudar a validade de um tipo recalcula o vencimento de todos os lotes dele.
+- **Movimentação**: toda entrada e saída fica registrada (quantidade, observação opcional, quem fez e quando). É o histórico.
+
+### Data do teste
+
+A data do teste é enviada como **texto** e interpretada pelo backend:
+
+| Digitado | Guardado como | Exibido | Vencimento (validade 10 anos) |
 |---|---|---|---|
-| POST | `/auth/registro` | Não | Cria um novo usuário |
-| POST | `/auth/login` | Não | Autentica e define o cookie de sessão |
-| POST | `/auth/logout` | Sim | Invalida a sessão e remove o cookie |
-| GET | `/auth/me` | Sim | Retorna os dados do usuário autenticado |
-| GET | `/itens` | Sim | Lista todos os itens do estoque (geladeira compartilhada) |
-| POST | `/itens` | Sim | Cria um item, vinculado ao usuário autenticado |
-| PUT | `/itens/{id}` | Sim | Atualiza um item existente (substituição completa) |
-| DELETE | `/itens/{id}` | Sim | Remove um item (bloqueado se houver movimentações) |
-| POST | `/movimentacoes` | Sim | Registra uma entrada (reposição) ou saída (consumo) |
-| GET | `/relatorios/gastos` | Sim | Total gasto pelo usuário autenticado num período |
+| `04/2016` ou `4/2016` | abril/2016 | `04/2016` | `04/2026` |
+| `2016` | janeiro/2016, marcado como "só ano" | `2016` | `01/2026` |
 
-> **Nota sobre `curl` no Windows:** dentro do PowerShell, `curl` é apelido de `Invoke-WebRequest` e não aceita as flags `-c`/`-b`/`-d` do curl real. Os exemplos abaixo usam `curl` (Git Bash/WSL/Linux/macOS, ou `curl.exe` explícito no Windows). Em PowerShell nativo, troque por `Invoke-RestMethod -SessionVariable session` (login) e `-WebSession $session` (chamadas seguintes) — exemplo completo logo após `/auth/login`.
+- Mês de 1 a 12, ano com 4 dígitos e sem data no futuro. Fora disso: `422` com mensagem em português dizendo os formatos aceitos.
+- "Só ano" assume janeiro — a leitura mais conservadora (vence antes). O vencimento é sempre exibido com mês, para não parecer que vale o ano inteiro.
+- `2016` e `01/2016` do mesmo tipo são **lotes diferentes** (a unicidade é tipo + data do teste + "só ano").
+
+### Entrada, saída e edição
+
+- **Entrada** com tipo e data do teste que já existem soma no lote; senão cria um lote novo. O número do lote original é mantido (só é preenchido se estiver vazio).
+- **Saída**: a usuária escolhe o lote; a tela já vem com o lote não vencido que vence primeiro. Saída maior que a quantidade do lote é bloqueada (`400`). Saída de lote vencido é permitida.
+- **Lote zerado** some da tela de estoque, mas continua no histórico.
+- **Lotes não são excluídos.** `PUT /lotes/{id}` corrige a data do teste e o número do lote (`409` se a nova data colidir com outro lote do mesmo tipo). Erro de quantidade se corrige com uma entrada/saída com observação.
+- **Tipo** só pode ser excluído se não tiver nenhum lote, nem zerado (`409`).
+- **Reteste** não tem funcionalidade própria: é uma saída do lote antigo e uma entrada com a nova data de teste.
+
+### Alertas (calculados no backend)
+
+`meses_restantes = (ano_venc × 12 + mês_venc) − (ano_hoje × 12 + mês_hoje)`
+
+| `meses_restantes` | Status | Na tela |
+|---|---|---|
+| menor que 0 | `vencido` | badge vermelho |
+| 0 a 2 | `urgente` | badge laranja |
+| 3 a 6 | `atencao` | badge amarelo |
+| mais de 6 | `ok` | sem badge |
+
+- O cilindro pode ser usado até o fim do mês de vencimento (`meses_restantes = 0` ainda é "urgente", não "vencido").
+- **Estoque disponível** de um tipo é a soma dos lotes **não vencidos**; o tipo fica com **estoque baixo** quando esse total é menor que o estoque mínimo.
+- Os limites 6 e 2 são configuráveis (seção 4).
+
+---
+
+## 6. Rotas da API
+
+Todas as rotas, exceto `/auth/login` e `/health`, exigem sessão válida via cookie `session_id` — sem ele, respondem `401 Unauthorized`.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/auth/login` | Autentica e define o cookie de sessão |
+| POST | `/auth/logout` | Invalida a sessão e remove o cookie |
+| GET | `/auth/me` | Dados da usuária autenticada |
+| GET | `/tipos` | Lista os tipos com estoque disponível e alerta de estoque baixo |
+| POST | `/tipos` | Cria um tipo |
+| PUT | `/tipos/{id}` | Atualiza um tipo (substituição completa) |
+| DELETE | `/tipos/{id}` | Exclui um tipo (bloqueado se tiver lotes) |
+| GET | `/lotes?tipo_id=` | Lotes com estoque, ordenados por vencimento, com status (filtro por tipo opcional) |
+| PUT | `/lotes/{id}` | Corrige data do teste e número do lote |
+| POST | `/movimentacoes/entrada` | Registra entrada (soma no lote existente ou cria outro) |
+| POST | `/movimentacoes/saida` | Registra saída de um lote |
+| GET | `/movimentacoes` | Histórico, do mais recente para o mais antigo |
+
+Não existem `POST /auth/registro`, `POST /lotes` nem `DELETE /lotes/{id}` (seção 5).
+
+> **Nota sobre `curl` no Windows:** no PowerShell, `curl` é apelido de `Invoke-WebRequest` e não aceita `-c`/`-b`/`-d`. Os exemplos abaixo usam o `curl` real (Git Bash/WSL/Linux/macOS, ou `curl.exe` no Windows). Em PowerShell nativo, use `Invoke-RestMethod -SessionVariable session` no login e `-WebSession $session` nas chamadas seguintes.
 
 ### Autenticação
-
-**POST /auth/registro**
-
-```bash
-curl -X POST http://localhost:8000/auth/registro \
-  -H "Content-Type: application/json" \
-  -d '{"nome": "Rodrigo", "email": "rodrigo@teste.com", "senha": "senha1234"}'
-```
-```json
-// 201 Created
-{"id": "5eabe54b-3a06-4089-8e95-584185758bd4", "nome": "Rodrigo", "email": "rodrigo@teste.com", "criado_em": "2026-07-24T17:34:04.749696"}
-```
-Erros: `409 Conflict` se o e-mail já existe. `422 Unprocessable Entity` se a senha tiver menos de 8 ou mais de 72 caracteres (limite do bcrypt), ou o e-mail for inválido.
-
-**POST /auth/login**
 
 ```bash
 curl -c cookies.txt -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "rodrigo@teste.com", "senha": "senha1234"}'
-```
-`-c cookies.txt` salva o cookie `session_id` recebido; as próximas chamadas usam `-b cookies.txt` para reenviá-lo.
-```json
-// 200 OK — mesmo formato do registro
-{"id": "5eabe54b-3a06-4089-8e95-584185758bd4", "nome": "Rodrigo", "email": "rodrigo@teste.com", "criado_em": "2026-07-24T17:34:04.749696"}
-```
-Erro: `401 Unauthorized` se e-mail/senha não conferirem.
-
-```powershell
-# Equivalente em PowerShell (mesma logica vale para as demais rotas abaixo,
-# so trocando -Method/-Body/URI):
-$resp = Invoke-RestMethod -Uri "http://localhost:8000/auth/login" -Method Post `
-  -ContentType "application/json" `
-  -Body '{"email": "rodrigo@teste.com", "senha": "senha1234"}' `
-  -SessionVariable session
-```
-
-**GET /auth/me**
-
-```bash
-curl -b cookies.txt http://localhost:8000/auth/me
+  -d '{"email": "maria@exemplo.com", "senha": "senha1234"}'
 ```
 ```json
 // 200 OK
-{"id": "5eabe54b-3a06-4089-8e95-584185758bd4", "nome": "Rodrigo", "email": "rodrigo@teste.com", "criado_em": "2026-07-24T17:34:04.749696"}
+{"id": "6752139c-5355-4c61-b942-be0f719f7e4b", "nome": "Maria", "email": "maria@exemplo.com", "criado_em": "2026-09-26T22:28:19.150249"}
 ```
-Erro: `401 Unauthorized` sem cookie válido.
+`-c cookies.txt` salva o cookie `session_id`; as próximas chamadas usam `-b cookies.txt`. Erro: `401` (`"E-mail ou senha inválidos"`).
 
-**POST /auth/logout**
+`POST /auth/logout` responde `204` e apaga a sessão no banco; depois disso `/auth/me` volta a responder `401`.
+
+### Tipos
 
 ```bash
-curl -b cookies.txt -c cookies.txt -X POST http://localhost:8000/auth/logout
-```
-`204 No Content` (sem corpo). Depois disso, `/auth/me` volta a responder `401`.
-
-### Itens do estoque
-
-A geladeira é compartilhada: `GET /itens` lista os itens de todos os usuários; `POST /itens` vincula o item criado ao usuário autenticado (`usuario_id`), mas qualquer usuário logado pode editar (`PUT`) ou remover (`DELETE`) qualquer item.
-
-**POST /itens**
-
-```bash
-curl -b cookies.txt -X POST http://localhost:8000/itens \
+curl -b cookies.txt -X POST http://localhost:8000/tipos \
   -H "Content-Type: application/json" \
-  -d '{"nome": "Leite", "quantidade": 2, "unidade": "litro", "valor_unitario": 5.50, "validade": "2026-08-01"}'
+  -d '{"nome": "Cilindro 10L", "estoque_minimo": 3}'
+```
+```json
+// 201 Created — validade_anos é opcional (padrão 10)
+{"id": "cae9f7c3-ad8f-4699-a4b5-de567277fb93", "nome": "Cilindro 10L", "estoque_minimo": 3, "validade_anos": 10, "criado_em": "2026-09-26T22:28:19.445480", "estoque_disponivel": 0, "estoque_baixo": true}
+```
+Erros: `409` se o nome já existe; `422` se `estoque_minimo` for negativo ou `validade_anos` não for maior que zero. `DELETE /tipos/{id}` com lotes: `409` (`"Não é possível excluir um tipo que já tem lotes registrados"`).
+
+### Entrada
+
+```bash
+curl -b cookies.txt -X POST http://localhost:8000/movimentacoes/entrada \
+  -H "Content-Type: application/json" \
+  -d '{"tipo_id": "cae9f7c3-ad8f-4699-a4b5-de567277fb93", "data_teste": "04/2016", "quantidade": 2, "numero_lote": "A-17", "observacao": "Compra"}'
 ```
 ```json
 // 201 Created
-{"id": "023aaf93-ff91-4471-8ce9-66298ecfa495", "usuario_id": "c8a21794-030b-4f9c-978b-65838740f751", "nome": "Leite", "quantidade": 2.0, "unidade": "litro", "valor_unitario": "5.50", "validade": "2026-08-01", "atualizado_em": "2026-07-24T21:00:38.898690"}
+{"id": "c0dc1f13-fa5b-49d5-a4a6-f2a7e14021c3", "lote": {"id": "cf647e92-4f3f-46ce-84fb-a94dc044c40f", "tipo": {"id": "cae9f7c3-ad8f-4699-a4b5-de567277fb93", "nome": "Cilindro 10L"}, "data_teste": "04/2016", "vencimento": "04/2026", "numero_lote": "A-17"}, "usuario_id": "6752139c-5355-4c61-b942-be0f719f7e4b", "tipo": "entrada", "quantidade": 2, "observacao": "Compra", "criado_em": "2026-09-26T22:28:19.497049"}
 ```
-`validade` é opcional. Erro: `422 Unprocessable Entity` se `quantidade` ou `valor_unitario` forem negativos.
+`numero_lote` e `observacao` são opcionais. Erros: `404` se o tipo não existir; `422` se a data do teste for inválida:
+```json
+// 422 Unprocessable Entity
+{"detail": [{"type": "data_teste_invalida", "loc": ["body", "data_teste"], "msg": "Data do teste inválida. Use MM/AAAA, M/AAAA ou AAAA (ex.: 04/2016, 4/2016 ou 2016).", "input": "04/26"}]}
+```
 
-**GET /itens**
+### Lotes
 
 ```bash
-curl -b cookies.txt http://localhost:8000/itens
+curl -b cookies.txt http://localhost:8000/lotes
 ```
 ```json
-// 200 OK
+// 200 OK — ordenados por vencimento; só lotes com quantidade > 0
 [
-  {"id": "023aaf93-ff91-4471-8ce9-66298ecfa495", "usuario_id": "c8a21794-030b-4f9c-978b-65838740f751", "nome": "Leite", "quantidade": 2.0, "unidade": "litro", "valor_unitario": "5.50", "validade": "2026-08-01", "atualizado_em": "2026-07-24T21:00:38.898690"},
-  {"id": "ebba31e2-3a8d-403f-95af-c19631bb57cf", "usuario_id": "6259aa48-da8b-40aa-be9d-31d6b8e4fb1a", "nome": "Cafe", "quantidade": 11.0, "unidade": "pacote", "valor_unitario": "3.00", "validade": null, "atualizado_em": "2026-07-25T17:47:58.264549"}
+  {"id": "cf647e92-4f3f-46ce-84fb-a94dc044c40f", "tipo": {"id": "cae9f7c3-ad8f-4699-a4b5-de567277fb93", "nome": "Cilindro 10L"}, "quantidade": 2, "data_teste": "04/2016", "vencimento": "04/2026", "numero_lote": "A-17", "criado_em": "2026-09-26T22:28:19.492488", "meses_restantes": -5, "status": "vencido"},
+  {"id": "746ae7a7-1f8f-4db3-8774-3e8488c7234b", "tipo": {"id": "cae9f7c3-ad8f-4699-a4b5-de567277fb93", "nome": "Cilindro 10L"}, "quantidade": 5, "data_teste": "2021", "vencimento": "01/2031", "numero_lote": null, "criado_em": "2026-09-26T22:28:19.511591", "meses_restantes": 52, "status": "ok"}
 ]
 ```
 
-**PUT /itens/{id}**
-
 ```bash
-curl -b cookies.txt -X PUT http://localhost:8000/itens/023aaf93-ff91-4471-8ce9-66298ecfa495 \
+curl -b cookies.txt -X PUT http://localhost:8000/lotes/cf647e92-4f3f-46ce-84fb-a94dc044c40f \
   -H "Content-Type: application/json" \
-  -d '{"nome": "Leite Integral", "quantidade": 3, "unidade": "litro", "valor_unitario": 5.90, "validade": "2026-08-10"}'
+  -d '{"data_teste": "05/2016", "numero_lote": "A-17"}'
 ```
-```json
-// 200 OK
-{"id": "023aaf93-ff91-4471-8ce9-66298ecfa495", "usuario_id": "c8a21794-030b-4f9c-978b-65838740f751", "nome": "Leite Integral", "quantidade": 3.0, "unidade": "litro", "valor_unitario": "5.90", "validade": "2026-08-10", "atualizado_em": "2026-07-24T21:05:12.001234"}
-```
-Erro: `404 Not Found` (`{"detail": "Item nao encontrado"}`) se o id não existir.
+`200` com o lote atualizado (mesmo formato do `GET /lotes`). Erros: `404` se o lote não existir; `409` (`"Já existe outro lote desse tipo com essa data de teste"`); `422` se a data for inválida.
 
-**DELETE /itens/{id}**
+### Saída e histórico
 
 ```bash
-curl -b cookies.txt -X DELETE http://localhost:8000/itens/023aaf93-ff91-4471-8ce9-66298ecfa495
-```
-`204 No Content` (sem corpo) em caso de sucesso.
-Erros: `404 Not Found` se o id não existir; `409 Conflict` (`{"detail": "Nao e possivel excluir um item com movimentacoes registradas"}`) se o item já tiver movimentações — o histórico de gastos não pode ser apagado excluindo o item que ele referencia (ver seção 6).
-
-### Movimentações e relatório de gastos
-
-**POST /movimentacoes**
-
-Registra uma entrada (reposição) ou saída (consumo), sempre vinculada ao usuário autenticado. `entrada` soma `quantidade` ao estoque; `saida` subtrai (bloqueada se não houver estoque suficiente). `valor_total` é sempre `quantidade × valor_unitario` do item **no momento da movimentação**, calculado no backend — o cliente nunca envia um valor, só a quantidade.
-
-```bash
-curl -b cookies.txt -X POST http://localhost:8000/movimentacoes \
+curl -b cookies.txt -X POST http://localhost:8000/movimentacoes/saida \
   -H "Content-Type: application/json" \
-  -d '{"item_id": "ebba31e2-3a8d-403f-95af-c19631bb57cf", "tipo": "saida", "quantidade": 4}'
+  -d '{"lote_id": "cf647e92-4f3f-46ce-84fb-a94dc044c40f", "quantidade": 1, "observacao": "Paciente"}'
 ```
-```json
-// 201 Created
-{"id": "7647422c-e0c8-448d-a0c9-a35bda21d315", "item_id": "ebba31e2-3a8d-403f-95af-c19631bb57cf", "usuario_id": "6259aa48-da8b-40aa-be9d-31d6b8e4fb1a", "tipo": "saida", "quantidade": 4.0, "valor_total": "12.00", "criado_em": "2026-07-25T17:47:58.266747"}
-```
-Erros: `404 Not Found` se `item_id` não existir. `400 Bad Request` (`{"detail": "Estoque insuficiente para essa saida"}`) se a saída pedida for maior que o estoque atual.
+`201` com a movimentação (mesmo formato da entrada). Erros: `404` se o lote não existir; `400` (`"Quantidade maior que a disponível no lote"`).
 
-**GET /relatorios/gastos**
-
-Soma o `valor_total` de todas as saídas do usuário autenticado num período, e devolve também a lista de movimentações usadas no cálculo. `data_inicio`/`data_fim` (`YYYY-MM-DD`) são opcionais — se omitidos, o período padrão é o mês corrente.
-
-```bash
-curl -b cookies.txt "http://localhost:8000/relatorios/gastos?data_inicio=2026-07-01&data_fim=2026-07-31"
-```
-```json
-// 200 OK
-{
-  "usuario_id": "6259aa48-da8b-40aa-be9d-31d6b8e4fb1a",
-  "data_inicio": "2026-07-01",
-  "data_fim": "2026-07-31",
-  "total_gasto": "12.00",
-  "movimentacoes": [
-    {"id": "7647422c-e0c8-448d-a0c9-a35bda21d315", "item_id": "ebba31e2-3a8d-403f-95af-c19631bb57cf", "usuario_id": "6259aa48-da8b-40aa-be9d-31d6b8e4fb1a", "tipo": "saida", "quantidade": 4.0, "valor_total": "12.00", "criado_em": "2026-07-25T17:47:58.266747"}
-  ]
-}
-```
+`GET /movimentacoes` devolve a lista de movimentações nesse mesmo formato, da mais recente para a mais antiga, incluindo as de lotes já zerados.
 
 ---
 
-## 6. Decisões técnicas relevantes
+## 7. Decisões técnicas
 
-### Por que UUID como chave primária (em vez de ID incremental)
+### Por que UUID como chave primária
 
-Todas as chaves primárias (`usuarios`, `itens_estoque`, `movimentacoes`, `sessoes`) são UUID v4 gerados no próprio backend (`uuid.uuid4()`), nunca IDs sequenciais (`1, 2, 3...`). Um ID incremental permite que qualquer usuário autenticado tente adivinhar registros de outras pessoas só variando o número na URL (`/itens/1`, `/itens/2`...) — uma falha conhecida como IDOR (Insecure Direct Object Reference) / enumeração de recursos. Um UUID v4 é aleatório: não existe um "próximo" valor previsível para tentar.
+Todas as chaves primárias são UUID v4 gerados no backend, nunca IDs sequenciais. Um ID incremental permite tentar adivinhar registros só variando o número na URL (`/lotes/1`, `/lotes/2`...) — IDOR/enumeração de recursos. Um UUID v4 não tem "próximo" previsível.
 
 ### Como funciona a sessão via cookie HttpOnly
 
-Login não devolve um token (JWT ou similar) no corpo da resposta para o frontend guardar. Em vez disso:
+1. `POST /auth/login` valida e-mail/senha e cria uma linha na tabela `sessoes` (expira em 7 dias).
+2. O `id` dessa sessão é assinado com `itsdangerous` (usando `SECRET_KEY`) e devolvido no cookie `session_id` com `HttpOnly=True`. Em `local`: `SameSite=Lax`, sem `Secure`. Fora de `local`: `SameSite=None` com `Secure=True` — necessário quando frontend e backend ficam em domínios diferentes (cross-site).
+3. Em toda rota protegida, o backend confere a assinatura e verifica no banco se a sessão existe e não expirou. Por isso o frontend usa `withCredentials: true` e o CORS precisa de `allow_credentials=True` com origem explícita.
+4. `POST /auth/logout` apaga a sessão no banco — ela morre no servidor, não só no navegador.
 
-1. `POST /auth/login` valida e-mail/senha e cria uma linha na tabela `sessoes` (`id`, `usuario_id`, `expira_em` = agora + 7 dias).
-2. O `id` dessa sessão é assinado com `itsdangerous` (usando `SECRET_KEY`) e devolvido num cookie `session_id` com `HttpOnly=True`. `SameSite` e `Secure` dependem de `ENVIRONMENT`: `Lax` sem `Secure` em `local` (backend e frontend contam como "mesmo site" para o navegador, já que `SameSite` ignora a porta); `None` com `Secure=True` fora de `local` — obrigatório em produção, onde Vercel e Render são domínios diferentes de verdade (cross-site) e o navegador só envia cookie cross-site com `SameSite=None`, que por sua vez exige `Secure`.
-3. Em toda requisição a uma rota protegida, o navegador manda o cookie automaticamente (por isso o frontend usa `withCredentials: true` e o CORS precisa de `allow_credentials=True` com uma origem explícita — nunca `*`). O backend lê o cookie, confere a assinatura e verifica no banco se a sessão existe e não expirou.
-4. `POST /auth/logout` apaga a linha da sessão no banco e remove o cookie — a sessão morre no servidor, não só no navegador.
+Cookie `HttpOnly` em vez de token em `localStorage`: um XSS não consegue ler o cookie. Sessão no banco em vez de JWT autocontido: dá para revogar a qualquer momento. A senha é guardada só como hash bcrypt (`passlib`).
 
-**Por que `HttpOnly` e nunca `localStorage`:** um cookie `HttpOnly` não pode ser lido por JavaScript (`document.cookie` não o enxerga). Se o token ficasse em `localStorage`, um XSS conseguiria roubá-lo; com `HttpOnly`, mesmo que um XSS aconteça, o cookie de sessão continua inacessível ao script malicioso.
+### Arquitetura em camadas
 
-**Por que sessão no banco em vez de só um token assinado:** o cookie guarda apenas o *id* da sessão, nunca dados do usuário. Isso permite revogar uma sessão a qualquer momento (logout) apagando a linha no banco — um JWT autocontido continuaria "válido" até expirar, mesmo que se quisesse invalidá-lo antes.
-
-A senha nunca é armazenada em texto puro, só o hash bcrypt (`senha_hash`, via `passlib`) — bcrypt é deliberadamente lento e usa salt, o que inviabiliza tanto descobrir a senha original quanto usar rainbow tables mesmo que o banco vaze.
+- **Backend:** `routers` só validam a requisição (via `schemas`) e traduzem erros para HTTP; `services` concentram as regras de negócio, sem depender de HTTP; `models` descrevem a persistência, separados dos `schemas` (contrato da API).
+- **Regras puras isoladas:** `services/data_teste.py` (interpretar/formatar a data do teste, calcular vencimento) e `services/alertas.py` (meses restantes, status, estoque disponível) recebem "hoje" como parâmetro — os testes fixam a data e cobrem as bordas sem depender do relógio.
+- **Frontend:** `pages` decidem o que aparece na tela, `hooks` decidem de onde vêm os dados (nenhuma página chama `axios` direto), `components` guardam os modais e peças de UI reaproveitadas.
 
 ### Escolhas de stack
 
-- **Backend — FastAPI + SQLAlchemy + SQLite:** FastAPI valida e documenta a API automaticamente a partir dos schemas Pydantic (Swagger em `/docs` sem esforço extra), é assíncrono por padrão e tem tipagem nativa via type hints do Python. SQLAlchemy (ORM) mantém a modelagem do banco em código Python versionável. **Por que SQLite em vez de Postgres:** o próprio desafio já indica SQLite como suficiente, e o volume de dados de uma geladeira doméstica/pequeno escritório (algumas dezenas de itens, um punhado de usuários) não justifica a complexidade operacional de um banco cliente-servidor. A troca para Postgres, se um dia fosse necessária, é só mudar `DATABASE_URL` — o código não tem nenhuma dependência específica de SQLite (o SQLAlchemy abstrai o driver).
-- **Frontend — React + TypeScript (Vite):** TypeScript pega erros de contrato com a API em tempo de compilação (ex.: um campo renomeado no backend quebra o build do frontend, não só em produção). Vite dá build/HMR rápido sem configuração manual de bundler. React + `react-router-dom` é o ecossistema mais direto para uma SPA pequena com rotas protegidas.
-
-**Arquitetura em camadas (backend):** `routers` só valida a requisição (via `schema`) e repassa para um `service`; `services` concentram a regra de negócio isolada de HTTP (testável sem servidor rodando); `models` descreve como o dado é persistido, propositalmente separado de `schemas` (como o dado trafega pela API) — uma mudança interna no banco não vira automaticamente uma mudança pública na API. O frontend replica o mesmo princípio: `pages` decide o que aparece na tela, `hooks` decide de onde vêm os dados (nenhuma página chama `axios` diretamente).
-
-**Modelagem de dados:** `movimentacoes` guarda tanto `item_id` quanto `usuario_id` — sem o `usuario_id` na própria movimentação, seria impossível calcular "quanto cada pessoa gastou" numa geladeira compartilhada, já que quem consome não é necessariamente quem cadastrou o item.
+- **FastAPI + SQLAlchemy + SQLite:** validação e documentação automáticas a partir dos schemas Pydantic (Swagger em `/docs`), ORM com o modelo versionado em código. SQLite basta para o volume de uma única usuária; trocar para Postgres é só mudar `DATABASE_URL`.
+- **Vite + React + TypeScript + Tailwind:** TypeScript strict pega mudanças de contrato da API em tempo de compilação; Tailwind facilita o layout responsivo (mobile first).
 
 ---
 
-## 7. Decisões e trade-offs conscientes
+## 8. Decisões e trade-offs conscientes
 
-Dado o prazo do desafio, alguns pontos foram deliberadamente deixados de fora do escopo — não por desconhecimento, mas por priorização. Registro do trade-off e de como cada um seria resolvido em produção:
-
-| Trade-off | Por que ficou de fora agora | Como resolver em produção |
+| Trade-off | Por que ficou assim | Como resolver se precisar |
 |---|---|---|
-| **Sem rate limiting em `/auth/login`** | Não há limite de tentativas de senha por IP/usuário — um atacante pode tentar força bruta indefinidamente. Implementar isso bem (armazenamento de contadores, janelas de tempo, resposta consistente) é um escopo à parte do desafio em si. | Middleware de rate limiting (ex.: `slowapi`/`fastapi-limiter` com Redis) por IP e por e-mail, ou bloqueio temporário de conta após N tentativas falhas seguidas. Em produção, isso também costuma ficar no API gateway/WAF, não só na aplicação. |
-| **Sem limpeza automática de sessões expiradas** | `get_current_user` já trata sessão expirada como não-autenticado (`expira_em < agora`), então não é um bug funcional — mas a linha nunca é removida da tabela `sessoes`, que cresce indefinidamente. | Um job periódico (cron, ou Celery beat) rodando `DELETE FROM sessoes WHERE expira_em < now()`, ou aproveitar o próprio `POST /auth/login` para apagar sessões expiradas do mesmo usuário antes de criar uma nova. |
-| **Sem lock explícito na checagem de estoque antes de gravar a saída** | `registrar_movimentacao` lê `item.quantidade`, decide se há estoque suficiente, e só depois grava — sem lock entre a leitura e a escrita. Em teoria, duas saídas simultâneas do mesmo item poderiam ambas "ver" estoque suficiente e deixar a quantidade negativa. Na prática, o SQLite usado aqui serializa escritas dentro de um único processo, então o risco real é baixíssimo neste escopo. | Em Postgres com múltiplos workers, a proteção correta seria `SELECT ... FOR UPDATE` na linha do item dentro da transação (lock pessimista), ou uma constraint `CHECK (quantidade >= 0)` no banco como rede de segurança independente da aplicação. |
-| **Imagens Docker sem volume de código / hot-reload** | `docker-compose.yml` não monta o código como volume — as imagens copiam o código no build (`COPY . .`), então mudar um arquivo local não reflete no container rodando. Simples e previsível (a imagem é sempre exatamente o que foi commitado), mas exige `docker compose up --build` a cada mudança. | Montar `./backend:/app` e `./frontend:/app` como bind mount (com um volume nomeado separado para `node_modules`, para não sobrescrever o que foi instalado no build) e manter `--reload`/Vite HMR ativos — é o padrão para ambiente de desenvolvimento em Docker. |
+| **Sem migrations (Alembic)** | O schema é criado com `create_all`, que não altera tabelas existentes. Com um banco novo (`cilindros.db`) isso basta. | Adotar Alembic antes da primeira mudança de schema com dados reais em produção. |
+| **Sem rate limiting em `/auth/login`** | Não há limite de tentativas de senha. | Middleware de rate limiting (ex.: `slowapi`) por IP e e-mail, ou bloqueio temporário após N falhas. |
+| **Sem limpeza de sessões expiradas** | Sessão expirada já é tratada como não autenticada, mas a linha fica na tabela `sessoes`. | Job periódico apagando sessões expiradas, ou limpar as da usuária a cada login. |
+| **Sem lock na checagem de estoque da saída** | A saída lê a quantidade do lote e depois grava. Com uma única usuária e SQLite, duas saídas simultâneas do mesmo lote são improváveis. | Em Postgres, `SELECT ... FOR UPDATE` na linha do lote ou `CHECK (quantidade >= 0)` no banco. |
+| **Datas de criação em UTC sem fuso** | `criado_em` é gravado com `datetime.utcnow()` (naive); o frontend converte para o horário local ao exibir. | Migrar para datetimes com fuso (`datetime.now(UTC)`). |
+| **Imagens Docker sem hot-reload** | As imagens copiam o código no build, então cada mudança exige `docker compose up --build`. | Montar o código como bind mount e manter `--reload`/HMR ativos. |
 
 ---
 
-## 8. Como rodar com Docker Compose
-
-Alternativa a rodar backend e frontend manualmente (seções 2 e 3): sobe os dois serviços com um único comando, cada um na sua própria imagem.
+## 9. Como rodar com Docker Compose
 
 ```powershell
-copy backend\.env.example backend\.env    # se ainda nao existir — o compose le esse arquivo
+copy backend\.env.example backend\.env    # se ainda não existir — o compose lê esse arquivo
 docker compose up --build
+docker compose exec backend python criar_usuario.py --nome "Maria" --email maria@exemplo.com
 ```
 
-- Backend em `http://localhost:8000` (`/docs` para o Swagger).
-- Frontend em `http://localhost:5173`.
-- `Ctrl+C` para parar; `docker compose down` remove os containers (os dados do banco continuam no volume nomeado `backend_data`); `docker compose down -v` remove o volume também, apagando os dados.
-
-Rodar de novo depois de mudar código exige `--build` (as imagens são construídas uma vez, com o código copiado para dentro — não há volume de código montado, então elas não atualizam sozinhas; ver seção 7).
+- Backend em `http://localhost:8000` (`/docs` para o Swagger); frontend em `http://localhost:5173`.
+- `docker compose down` remove os containers, mas os dados continuam no volume nomeado `backend_data`; `docker compose down -v` apaga o volume também.
+- O `criar_usuario.py` roda dentro do container (`exec`), então grava no mesmo banco que a API usa.
 
 **O que cada `Dockerfile` faz:**
 
-- **`backend/Dockerfile`**: parte de `python:3.13-slim`, instala as dependências do `requirements.txt`, copia o código, e sobe `uvicorn main:app --host 0.0.0.0 --port 8000`. O `--host 0.0.0.0` é obrigatório — sem ele o uvicorn só aceita conexões de dentro do próprio container, mesmo com a porta publicada no `docker-compose.yml`.
-- **`frontend/Dockerfile`**: parte de `node:22-slim`, instala as dependências via `npm ci` (instala exatamente o que está no `package-lock.json`, mais rápido e previsível que `npm install` para builds), copia o código, e sobe `npm run dev -- --host 0.0.0.0` — mesmo motivo do `--host` do backend: o Vite por padrão só escuta em `localhost` dentro do container.
+- **`backend/Dockerfile`**: `python:3.13-slim`, instala o `requirements.txt` (inclui `tzdata`, necessário para o fuso `America/Sao_Paulo`), copia o código e sobe `uvicorn main:app --host 0.0.0.0 --port 8000`. O `--host 0.0.0.0` é obrigatório — sem ele o uvicorn só aceita conexões de dentro do próprio container.
+- **`frontend/Dockerfile`**: `node:22-slim`, instala as dependências com `npm ci` e sobe `npm run dev -- --host 0.0.0.0`, pelo mesmo motivo.
 
-**Como os dois serviços se comunicam:** na verdade, o backend e o frontend **não conversam entre si dentro da rede do Docker**. Quem fala com o backend é o **navegador**, rodando na máquina host — e o frontend é só uma SPA (React) que o navegador baixa e executa localmente. Por isso `src/api/client.ts` continua apontando para `http://localhost:8000` mesmo em Docker: graças ao mapeamento de portas (`ports: "8000:8000"` no `docker-compose.yml`), o container do backend fica acessível em `localhost:8000` a partir do host — que é exatamente onde o navegador está. Se o frontend tentasse chamar `http://backend:8000` (o nome do serviço, que só existe na rede interna do Docker), o navegador não conseguiria resolver esse endereço, porque `backend` só é um hostname válido *para outros containers*, não para a máquina host.
+**Como os dois serviços se comunicam:** eles **não conversam pela rede interna do Docker**. Quem fala com o backend é o navegador, na máquina host; o frontend é só uma SPA que o navegador baixa. Por isso `src/api/client.ts` aponta para `http://localhost:8000` mesmo no Docker: com `ports: "8000:8000"`, o backend fica acessível em `localhost:8000` a partir do host. `http://backend:8000` só resolveria para outros containers, não para o navegador.
 
-**Persistência do banco:** o `docker-compose.yml` sobrescreve `DATABASE_URL` para `sqlite:///./data/geladeira.db` e monta um volume nomeado (`backend_data`) em `/app/data` dentro do container do backend. Isso separa o ciclo de vida dos dados do ciclo de vida do container: `docker compose down` (sem `-v`) remove os containers, mas o volume continua existindo, então o próximo `docker compose up` volta com os mesmos dados — testado no desenvolvimento deste projeto (cadastrei um usuário, derrubei e subi os containers de novo, o login continuou funcionando).
-
----
-
-## Resumo para revisão rápida (roteiro de entrevista)
-
-- **Autenticação:** sessão via cookie `HttpOnly`, id da sessão assinado com `itsdangerous`, sessão validada no banco (revogável no logout) — nunca JWT autocontido, nunca token em `localStorage`. `SameSite`/`Secure` mudam com `ENVIRONMENT`: `Lax` sem `Secure` em local, `None` com `Secure` em produção (Vercel + Render são domínios diferentes — cross-site de verdade).
-- **Deploy:** frontend na Vercel, backend no Render — domínios diferentes, então o cookie de sessão só funciona cross-site graças ao `SameSite=None`+`Secure` condicional acima; `VITE_API_URL` (frontend) e `FRONTEND_ORIGIN` (backend) apontam um pro outro via variável de ambiente, nunca hardcoded.
-- **Senha:** hash bcrypt via `passlib`, nunca texto puro; `max_length=72` no schema porque o próprio bcrypt trunca/rejeita além disso.
-- **UUID em vez de ID incremental:** evita IDOR/enumeração de recursos (`/itens/1`, `/itens/2`...) em todas as tabelas com dado sensível ou vinculado a usuário.
-- **Arquitetura em camadas:** `routers` (protocolo) → `services` (regra de negócio) → `models`/`schemas` (persistência vs. contrato de API) no backend; `pages` (UI) → `hooks` (dados) no frontend — cada camada muda por um motivo diferente.
-- **Modelagem:** `movimentacoes` é o histórico de auditoria (entrada/saída, `usuario_id`, `valor_total` calculado no backend); por isso a exclusão de um item com movimentações é bloqueada (`409`) em vez de fazer cascade — apagar o item não pode apagar o histórico de gastos de quem consumiu.
-- **Stack:** FastAPI + SQLAlchemy + SQLite no backend (tipado, autodocumentado, troca de banco é só mudar `DATABASE_URL`); Vite + React + TypeScript + Tailwind no frontend (tipagem end-to-end, build rápido).
-- **Testes automatizados:** `pytest` + `TestClient` do FastAPI em `backend/tests/`, rodando contra um SQLite isolado (nunca o banco de desenvolvimento) — cobrem autenticação, proteção de rota, movimentação de estoque/gastos e o bloqueio de exclusão de item com histórico (regressão do bug do cascade delete).
-- **Docker:** `docker-compose.yml` sobe backend e frontend em containers separados; eles não se comunicam pela rede interna do Docker — é o navegador, no host, que fala com os dois via `localhost` graças ao mapeamento de portas. O banco SQLite persiste num volume nomeado entre `down`/`up`.
-- **Trade-offs conscientes e por quê:** sem rate limiting no login, sem limpeza de sessões expiradas, sem lock explícito na checagem de estoque, sem hot-reload nas imagens Docker — todos de baixo risco real no escopo atual, todos com uma solução conhecida e citável para produção (seção 7).
+**Persistência do banco:** o `docker-compose.yml` sobrescreve `DATABASE_URL` para `sqlite:///./data/cilindros.db` e monta o volume nomeado `backend_data` em `/app/data`, separando o ciclo de vida dos dados do ciclo de vida do container. O `.dockerignore` exclui qualquer `*.db` local, então a imagem nunca leva dados junto.

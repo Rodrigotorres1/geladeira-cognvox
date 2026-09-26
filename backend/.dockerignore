@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .env
-geladeira.db
-tests/test.db
+# Bancos SQLite locais (cilindros.db, tests/test.db): a imagem nasce sem
+# dados; no Docker o banco fica no volume montado em /app/data.
+*.db
 .git

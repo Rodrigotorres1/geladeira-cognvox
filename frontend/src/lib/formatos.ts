@@ -10,10 +10,19 @@ export function mesAnoAtual() {
   return `${String(hoje.getMonth() + 1).padStart(2, '0')}/${hoje.getFullYear()}`
 }
 
+// Até 12 meses: "5 meses". Acima disso: "3 anos e 4 meses" (ou só "2 anos").
+export function formatarDuracaoMeses(meses: number) {
+  if (meses <= 12) return plural(meses, 'mês', 'meses')
+  const anos = Math.floor(meses / 12)
+  const resto = meses % 12
+  const textoAnos = plural(anos, 'ano', 'anos')
+  return resto === 0 ? textoAnos : `${textoAnos} e ${plural(resto, 'mês', 'meses')}`
+}
+
 export function descreverMesesRestantes(meses: number) {
-  if (meses < 0) return `vencido há ${plural(-meses, 'mês', 'meses')}`
+  if (meses < 0) return `vencido há ${formatarDuracaoMeses(-meses)}`
   if (meses === 0) return 'vence este mês'
-  return `vence em ${plural(meses, 'mês', 'meses')}`
+  return `vence em ${formatarDuracaoMeses(meses)}`
 }
 
 // O backend grava criado_em em UTC sem indicar o fuso ("2026-09-26T21:32:08").
