@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Literal, Optional
 
 from fastapi import Cookie, Depends, HTTPException, status
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.tempo import agora_utc
 from app.models.sessao import Sessao
 from app.models.usuario import Usuario
 
@@ -76,7 +77,7 @@ def get_current_user(
         raise nao_autenticado
 
     sessao = db.get(Sessao, sessao_id)
-    if sessao is None or sessao.expira_em < datetime.utcnow():
+    if sessao is None or sessao.expira_em < agora_utc():
         raise nao_autenticado
 
     usuario = db.get(Usuario, sessao.usuario_id)

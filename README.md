@@ -281,7 +281,7 @@ Cookie `HttpOnly` em vez de token em `localStorage`: um XSS não consegue ler o 
 | **Sem rate limiting em `/auth/login`** | Não há limite de tentativas de senha. | Middleware de rate limiting (ex.: `slowapi`) por IP e e-mail, ou bloqueio temporário após N falhas. |
 | **Sem limpeza de sessões expiradas** | Sessão expirada já é tratada como não autenticada, mas a linha fica na tabela `sessoes`. | Job periódico apagando sessões expiradas, ou limpar as da usuária a cada login. |
 | **Sem lock na checagem de estoque da saída** | A saída lê a quantidade do lote e depois grava. Com uma única usuária e SQLite, duas saídas simultâneas do mesmo lote são improváveis. | Em Postgres, `SELECT ... FOR UPDATE` na linha do lote ou `CHECK (quantidade >= 0)` no banco. |
-| **Datas de criação em UTC sem fuso** | `criado_em` é gravado com `datetime.utcnow()` (naive); o frontend converte para o horário local ao exibir. | Migrar para datetimes com fuso (`datetime.now(UTC)`). |
+| **Datas de criação em UTC sem fuso** | `criado_em` é gravado em UTC sem tzinfo (`app/core/tempo.py:agora_utc`), porque o SQLite não guarda fuso; o frontend converte para o horário local ao exibir. | Migrar para datetimes com fuso (`datetime.now(UTC)`). |
 | **Imagens Docker sem hot-reload** | As imagens copiam o código no build, então cada mudança exige `docker compose up --build`. | Montar o código como bind mount e manter `--reload`/HMR ativos. |
 
 ---

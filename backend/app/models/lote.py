@@ -6,6 +6,7 @@ from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.tempo import agora_utc
 
 if TYPE_CHECKING:
     from app.models.movimentacao import Movimentacao
@@ -32,7 +33,7 @@ class Lote(Base):
     data_teste: Mapped[date] = mapped_column(nullable=False)
     data_teste_so_ano: Mapped[bool] = mapped_column(nullable=False, default=False)
     numero_lote: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    criado_em: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    criado_em: Mapped[datetime] = mapped_column(default=agora_utc)
 
     tipo: Mapped["TipoCilindro"] = relationship(back_populates="lotes")
     # Sem cascade de delete e sem rota de exclusao: o lote e a ponte entre o

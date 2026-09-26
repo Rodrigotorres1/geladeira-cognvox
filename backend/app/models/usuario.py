@@ -6,6 +6,7 @@ from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.tempo import agora_utc
 
 if TYPE_CHECKING:
     from app.models.movimentacao import Movimentacao
@@ -22,7 +23,7 @@ class Usuario(Base):
     nome: Mapped[str] = mapped_column(String, nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     senha_hash: Mapped[str] = mapped_column(String, nullable=False)
-    criado_em: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    criado_em: Mapped[datetime] = mapped_column(default=agora_utc)
 
     movimentacoes: Mapped[list["Movimentacao"]] = relationship(
         back_populates="usuario", cascade="all, delete-orphan"

@@ -7,6 +7,7 @@ from sqlalchemy import Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.tempo import agora_utc
 
 if TYPE_CHECKING:
     from app.models.lote import Lote
@@ -27,7 +28,7 @@ class Movimentacao(Base):
     tipo: Mapped[TipoMovimentacao] = mapped_column(Enum(TipoMovimentacao), nullable=False)
     quantidade: Mapped[int] = mapped_column(nullable=False)
     observacao: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    criado_em: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    criado_em: Mapped[datetime] = mapped_column(default=agora_utc)
 
     lote: Mapped["Lote"] = relationship(back_populates="movimentacoes")
     usuario: Mapped["Usuario"] = relationship(back_populates="movimentacoes")

@@ -1,9 +1,9 @@
 import uuid
-from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from app.core.security import SESSION_DURATION, hash_password, verify_password
+from app.core.tempo import agora_utc
 from app.models.sessao import Sessao
 from app.models.usuario import Usuario
 from app.schemas.auth import RedefinicaoSenha, UsuarioCriar
@@ -59,7 +59,7 @@ def autenticar_usuario(db: Session, email: str, senha: str) -> Usuario:
 def criar_sessao(db: Session, usuario: Usuario) -> Sessao:
     sessao = Sessao(
         usuario_id=usuario.id,
-        expira_em=datetime.utcnow() + SESSION_DURATION,
+        expira_em=agora_utc() + SESSION_DURATION,
     )
     db.add(sessao)
     db.commit()

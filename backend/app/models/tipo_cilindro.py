@@ -6,6 +6,7 @@ from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.tempo import agora_utc
 
 if TYPE_CHECKING:
     from app.models.lote import Lote
@@ -19,7 +20,7 @@ class TipoCilindro(Base):
     estoque_minimo: Mapped[int] = mapped_column(nullable=False)
     # Validade do teste hidrostatico: vencimento do lote = data_teste + isso.
     validade_anos: Mapped[int] = mapped_column(nullable=False, default=10)
-    criado_em: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    criado_em: Mapped[datetime] = mapped_column(default=agora_utc)
 
     # Sem cascade de delete: remover() em tipos_service.py bloqueia a exclusao
     # de um tipo que tenha qualquer lote, mesmo zerado (o lote carrega o
