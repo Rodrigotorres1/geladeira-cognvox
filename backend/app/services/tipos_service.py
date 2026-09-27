@@ -60,11 +60,13 @@ def buscar(db: Session, tipo_id: uuid.UUID) -> TipoCilindro:
 def _garantir_nome_livre(
     db: Session, nome: str, ignorar_id: Optional[uuid.UUID] = None
 ) -> None:
-    consulta = db.query(TipoCilindro.id).filter(TipoCilindro.nome == nome)
-    if ignorar_id is not None:
-        consulta = consulta.filter(TipoCilindro.id != ignorar_id)
-    if consulta.first() is not None:
-        raise TipoDuplicadoError()
+    # Compara em Python com casefold() em vez de lower() no SQL: o lower() do
+    # SQLite so trata ASCII, entao "ÓXIGÊNIO" e "óxigênio" passariam como
+    # nomes diferentes. A tabela de tipos e pequena, ler todos os nomes e ok.
+    nome_normalizado = nome.casefold()
+    for tipo_id, nome_existente in db.query(TipoCilindro.id, TipoCilindro.nome):
+        if tipo_id != ignorar_id and nome_existente.casefold() == nome_normalizado:
+            raise TipoDuplicadoError()
 
 
 def criar(db: Session, dados: TipoCriar) -> TipoOut:

@@ -141,6 +141,7 @@ def test_entrada_de_tipo_inexistente_retorna_404(usuario_logado):
     resposta = _post_entrada(usuario_logado, str(uuid.uuid4()), "04/2020")
 
     assert resposta.status_code == 404
+    assert resposta.json()["detail"] == "Tipo de cilindro não encontrado"
 
 
 @pytest.mark.parametrize("data_teste", ["04/2026", "4/2026", "2026"])
@@ -260,6 +261,7 @@ def test_saida_de_lote_inexistente_retorna_404(usuario_logado):
     )
 
     assert resposta.status_code == 404
+    assert resposta.json()["detail"] == "Lote não encontrado"
 
 
 def test_saida_com_quantidade_zero_retorna_422(usuario_logado, lote_com_estoque):
@@ -329,3 +331,28 @@ def test_historico_vem_do_mais_recente_para_o_mais_antigo(usuario_logado, lote_c
     assert [mov["quantidade"] for mov in historico] == [3, 2, 1, 10]
     datas = [mov["criado_em"] for mov in historico]
     assert datas == sorted(datas, reverse=True)
+
+
+@pytest.mark.parametrize("quantidade", [-1, 1.5])
+def test_saida_com_quantidade_negativa_ou_fracionada_retorna_422(
+    usuario_logado, lote_com_estoque, quantidade
+):
+    resposta = usuario_logado.post(
+        "/movimentacoes/saida", json={"lote_id": lote_com_estoque["id"], "quantidade": quantidade}
+    )
+
+    assert resposta.status_code == 422
+    assert _lotes(usuario_logado)[0]["quantidade"] == lote_com_estoque["quantidade"]
+
+
+def test_entrada_com_ano_anterior_a_1900_retorna_422(usuario_logado, tipo_criado):
+    resposta = _post_entrada(usuario_logado, tipo_criado["id"], "1899")
+
+    assert resposta.status_code == 422
+    assert resposta.json()["detail"][0]["msg"] == "Ano inválido na data do teste."
+
+
+def test_id_da_movimentacao_e_uuid_v4(usuario_logado, lote_com_estoque):
+    mov = usuario_logado.get("/movimentacoes").json()[0]
+
+    assert uuid.UUID(mov["id"]).version == 4

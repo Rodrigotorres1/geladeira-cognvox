@@ -198,6 +198,7 @@ def test_editar_lote_inexistente_retorna_404(usuario_logado):
     resposta = usuario_logado.put(f"/lotes/{uuid.uuid4()}", json={"data_teste": "03/2020"})
 
     assert resposta.status_code == 404
+    assert resposta.json()["detail"] == "Lote não encontrado"
 
 
 def test_nao_existe_rota_para_excluir_lote(usuario_logado, lote_com_estoque):
@@ -213,3 +214,18 @@ def test_nao_existe_rota_para_criar_lote_direto(usuario_logado, tipo_criado):
     )
 
     assert resposta.status_code == 405
+
+
+def test_put_do_lote_ignora_quantidade(usuario_logado, lote_com_estoque):
+    resposta = usuario_logado.put(
+        f"/lotes/{lote_com_estoque['id']}",
+        json={"data_teste": lote_com_estoque["data_teste"], "quantidade": 999},
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["quantidade"] == lote_com_estoque["quantidade"]
+    assert usuario_logado.get("/lotes").json()[0]["quantidade"] == lote_com_estoque["quantidade"]
+
+
+def test_id_do_lote_e_uuid_v4(lote_com_estoque):
+    assert uuid.UUID(lote_com_estoque["id"]).version == 4

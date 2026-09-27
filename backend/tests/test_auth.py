@@ -1,3 +1,11 @@
+import uuid
+from datetime import timedelta
+
+from app.core.database import SessionLocal
+from app.core.tempo import agora_utc
+from app.models.sessao import Sessao
+
+
 def test_cadastro_publico_nao_existe(client):
     resposta = client.post(
         "/auth/registro",
@@ -46,3 +54,47 @@ def test_me_retorna_a_usuaria_logada(usuario_logado, usuaria_cadastrada):
 
     assert resposta.status_code == 200
     assert resposta.json()["email"] == usuaria_cadastrada["email"]
+
+
+def test_rota_protegida_sem_sessao_responde_nao_autenticado(client):
+    resposta = client.get("/auth/me")
+
+    assert resposta.status_code == 401
+    assert resposta.json()["detail"] == "Não autenticado"
+
+
+def test_logout_encerra_a_sessao_no_servidor(usuario_logado):
+    cookie_antigo = usuario_logado.cookies.get("session_id")
+
+    resposta = usuario_logado.post("/auth/logout")
+
+    assert resposta.status_code == 204
+    assert usuario_logado.get("/auth/me").status_code == 401
+    # Reenviar o cookie antigo nao adianta: a sessao foi apagada do banco.
+    usuario_logado.cookies.set("session_id", cookie_antigo)
+    assert usuario_logado.get("/auth/me").status_code == 401
+
+
+def test_sessao_expirada_nao_autentica(usuario_logado):
+    db = SessionLocal()
+    try:
+        for sessao in db.query(Sessao).all():
+            sessao.expira_em = agora_utc() - timedelta(minutes=1)
+        db.commit()
+    finally:
+        db.close()
+
+    resposta = usuario_logado.get("/auth/me")
+
+    assert resposta.status_code == 401
+    assert resposta.json()["detail"] == "Não autenticado"
+
+
+def test_cookie_adulterado_nao_autentica(client, usuaria_cadastrada):
+    client.cookies.set("session_id", "valor-forjado")
+
+    assert client.get("/auth/me").status_code == 401
+
+
+def test_id_da_usuaria_e_uuid_v4(usuario_logado):
+    assert uuid.UUID(usuario_logado.get("/auth/me").json()["id"]).version == 4

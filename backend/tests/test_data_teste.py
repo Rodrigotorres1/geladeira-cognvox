@@ -69,3 +69,12 @@ def test_mensagens_de_erro_tem_acentuacao():
         interpretar_data_teste("2030", HOJE)
     with pytest.raises(DataTesteInvalidaError, match="Data do teste inválida"):
         interpretar_data_teste("abc", HOJE)
+
+
+def test_ano_anterior_a_1900_e_recusado_e_1900_e_aceito():
+    with pytest.raises(DataTesteInvalidaError, match="Ano inválido"):
+        interpretar_data_teste("1899", HOJE)
+    with pytest.raises(DataTesteInvalidaError, match="Ano inválido"):
+        interpretar_data_teste("12/1899", HOJE)
+
+    assert interpretar_data_teste("1900", HOJE) == DataTeste(date(1900, 1, 1), so_ano=True)

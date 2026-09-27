@@ -1,8 +1,9 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
 
+from app.core.config import get_settings
 from app.services.alertas import (
     QuantidadeVencimento,
     data_hoje,
@@ -102,3 +103,34 @@ def test_estoque_minimo_zero_nunca_fica_baixo():
 
 def test_data_hoje_usa_o_fuso_configurado():
     assert data_hoje() == datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+
+
+# --- Limites e fuso vindos das Settings ---
+
+
+def test_limites_de_alerta_vem_das_settings(monkeypatch):
+    settings = get_settings()
+    vencimento = date(2026, 4, 1)
+    hoje = date(2026, 1, 15)  # faltam 3 meses
+
+    assert status_lote(vencimento, hoje) == "atencao"
+
+    monkeypatch.setattr(settings, "meses_alerta_urgente", 3)
+    assert status_lote(vencimento, hoje) == "urgente"
+
+    monkeypatch.setattr(settings, "meses_alerta_urgente", 1)
+    monkeypatch.setattr(settings, "meses_alerta_atencao", 2)
+    assert status_lote(vencimento, hoje) == "ok"
+
+
+def test_fuso_de_hoje_vem_das_settings(monkeypatch):
+    # UTC+14 e UTC-11 estao sempre 25h distantes: a data em Kiritimati e
+    # sempre um dia depois da data em Pago Pago, a qualquer hora.
+    settings = get_settings()
+
+    monkeypatch.setattr(settings, "timezone", "Pacific/Kiritimati")
+    hoje_adiantado = data_hoje()
+    monkeypatch.setattr(settings, "timezone", "Pacific/Pago_Pago")
+    hoje_atrasado = data_hoje()
+
+    assert hoje_adiantado - hoje_atrasado == timedelta(days=1)

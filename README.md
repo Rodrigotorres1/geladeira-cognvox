@@ -53,7 +53,7 @@ cd backend
 pytest -v
 ```
 
-Os testes (`backend/tests/`) rodam contra um SQLite isolado (`tests/test.db`, criado e apagado automaticamente) — nunca tocam em `cilindros.db`. Cobrem autenticação, o script de usuária, tipos, lotes, movimentações, a interpretação da data do teste e as bordas dos alertas (com a data de "hoje" fixada).
+Os testes (`backend/tests/`) rodam contra um SQLite isolado (`tests/test.db`, criado e apagado automaticamente) — nunca tocam em `cilindros.db`. Cobrem autenticação e sessão (logout, expiração, cookie adulterado), o script de usuária, as mensagens de validação em português, tipos, lotes, movimentações, a interpretação da data do teste e as bordas dos alertas (com a data de "hoje" fixada).
 
 ---
 
@@ -101,7 +101,7 @@ Verificações usadas no projeto: `npx tsc -b` (TypeScript strict) e `npm run li
 
 ### Tipos, lotes e movimentações
 
-- **Tipo de cilindro**: nome (único), estoque mínimo e validade do teste hidrostático em anos (padrão 10).
+- **Tipo de cilindro**: nome (único sem diferenciar maiúsculas/minúsculas; espaços nas pontas são removidos), estoque mínimo e validade do teste hidrostático em anos (padrão 10 na criação; obrigatória no `PUT`).
 - **Lote**: cilindros de um tipo com a mesma data de teste hidrostático. O vencimento **não é do gás, é do teste**: vencimento = data do teste + validade do tipo. Ele é calculado, não fica gravado — mudar a validade de um tipo recalcula o vencimento de todos os lotes dele.
 - **Movimentação**: toda entrada e saída fica registrada (quantidade, observação opcional, quem fez e quando). É o histórico.
 
@@ -121,7 +121,7 @@ A data do teste é enviada como **texto** e interpretada pelo backend:
 ### Entrada, saída e edição
 
 - **Entrada** com tipo e data do teste que já existem soma no lote; senão cria um lote novo. O número do lote original é mantido (só é preenchido se estiver vazio).
-- **Saída**: a usuária escolhe o lote; a tela já vem com o lote não vencido que vence primeiro. Saída maior que a quantidade do lote é bloqueada (`400`). Saída de lote vencido é permitida.
+- **Saída**: a usuária escolhe o lote; a tela já vem com o lote não vencido que vence primeiro (ou, se só houver lotes vencidos, com o primeiro deles). Saída maior que a quantidade do lote é bloqueada (`400`). Saída de lote vencido é permitida.
 - **Lote zerado** some da tela de estoque, mas continua no histórico.
 - **Lotes não são excluídos.** `PUT /lotes/{id}` corrige a data do teste e o número do lote (`409` se a nova data colidir com outro lote do mesmo tipo). Erro de quantidade se corrige com uma entrada/saída com observação.
 - **Tipo** só pode ser excluído se não tiver nenhum lote, nem zerado (`409`).
@@ -155,7 +155,7 @@ Todas as rotas, exceto `/auth/login` e `/health`, exigem sessão válida via coo
 | GET | `/auth/me` | Dados da usuária autenticada |
 | GET | `/tipos` | Lista os tipos com estoque disponível e alerta de estoque baixo |
 | POST | `/tipos` | Cria um tipo |
-| PUT | `/tipos/{id}` | Atualiza um tipo (substituição completa) |
+| PUT | `/tipos/{id}` | Atualiza um tipo (substituição completa: `nome`, `estoque_minimo` e `validade_anos` obrigatórios) |
 | DELETE | `/tipos/{id}` | Exclui um tipo (bloqueado se tiver lotes) |
 | GET | `/lotes?tipo_id=` | Lotes com estoque, ordenados por vencimento, com status (filtro por tipo opcional) |
 | PUT | `/lotes/{id}` | Corrige data do teste e número do lote |
@@ -164,6 +164,8 @@ Todas as rotas, exceto `/auth/login` e `/health`, exigem sessão válida via coo
 | GET | `/movimentacoes` | Histórico, do mais recente para o mais antigo |
 
 Não existem `POST /auth/registro`, `POST /lotes` nem `DELETE /lotes/{id}` (seção 5).
+
+**Erros de validação (`422`)** vêm no formato padrão do FastAPI — `{"detail": [{"type", "loc", "msg", ...}]}` —, mas com `msg` em português e com o nome do campo, ex.: `"Quantidade: deve ser maior que 0."`, `"Estoque mínimo: campo obrigatório."`, `"Nome: não pode ficar em branco."`. A tradução fica em `backend/app/core/validacao.py`; tipos de erro sem tradução específica recebem `"<Campo>: valor inválido."`. As mensagens da data do teste já nascem em português e passam como estão.
 
 > **Nota sobre `curl` no Windows:** no PowerShell, `curl` é apelido de `Invoke-WebRequest` e não aceita `-c`/`-b`/`-d`. Os exemplos abaixo usam o `curl` real (Git Bash/WSL/Linux/macOS, ou `curl.exe` no Windows). Em PowerShell nativo, use `Invoke-RestMethod -SessionVariable session` no login e `-WebSession $session` nas chamadas seguintes.
 
@@ -193,7 +195,7 @@ curl -b cookies.txt -X POST http://localhost:8000/tipos \
 // 201 Created — validade_anos é opcional (padrão 10)
 {"id": "cae9f7c3-ad8f-4699-a4b5-de567277fb93", "nome": "Cilindro 10L", "estoque_minimo": 3, "validade_anos": 10, "criado_em": "2026-09-26T22:28:19.445480", "estoque_disponivel": 0, "estoque_baixo": true}
 ```
-Erros: `409` se o nome já existe; `422` se `estoque_minimo` for negativo ou `validade_anos` não for maior que zero. `DELETE /tipos/{id}` com lotes: `409` (`"Não é possível excluir um tipo que já tem lotes registrados"`).
+Erros: `409` se já existe um tipo com esse nome, sem diferenciar maiúsculas/minúsculas; `422` se o nome estiver vazio (ou só com espaços), se `estoque_minimo` for negativo ou se `validade_anos` não for maior que zero. No `PUT`, omitir `validade_anos` também dá `422` — não volta para o padrão em silêncio. `DELETE /tipos/{id}` com lotes: `409` (`"Não é possível excluir um tipo que já tem lotes registrados"`).
 
 ### Entrada
 
@@ -282,6 +284,7 @@ Cookie `HttpOnly` em vez de token em `localStorage`: um XSS não consegue ler o 
 | **Sem limpeza de sessões expiradas** | Sessão expirada já é tratada como não autenticada, mas a linha fica na tabela `sessoes`. | Job periódico apagando sessões expiradas, ou limpar as da usuária a cada login. |
 | **Sem lock na checagem de estoque da saída** | A saída lê a quantidade do lote e depois grava. Com uma única usuária e SQLite, duas saídas simultâneas do mesmo lote são improváveis. | Em Postgres, `SELECT ... FOR UPDATE` na linha do lote ou `CHECK (quantidade >= 0)` no banco. |
 | **Datas de criação em UTC sem fuso** | `criado_em` é gravado em UTC sem tzinfo (`app/core/tempo.py:agora_utc`), porque o SQLite não guarda fuso; o frontend converte para o horário local ao exibir. | Migrar para datetimes com fuso (`datetime.now(UTC)`). |
+| **Sem testes automatizados no frontend** | O projeto não tem runner de testes no frontend (Vitest/Testing Library). As regras de negócio estão no backend e cobertas por pytest, mas o que é só de tela fica sem teste automatizado: pré-seleção do lote na saída, preenchimento dos modais, texto "vence em X anos e Y meses", badges e layout no celular. A verificação hoje é `npx tsc -b`, `npm run lint` e uso manual. | Adicionar Vitest + Testing Library para as funções de `lib/` (`loteParaSaida`, `descreverMesesRestantes`, `extrairMensagemErro`) e para os modais; Playwright para o fluxo completo em viewport de celular. |
 | **Imagens Docker sem hot-reload** | As imagens copiam o código no build, então cada mudança exige `docker compose up --build`. | Montar o código como bind mount e manter `--reload`/HMR ativos. |
 
 ---
