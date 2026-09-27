@@ -3,11 +3,22 @@ from pathlib import Path
 
 TEST_DB_PATH = Path(__file__).parent / "test.db"
 
+# Por padrao os testes usam um SQLite descartavel (tests/test.db). Para rodar
+# a mesma suite contra outro banco (ex.: um Postgres de teste no Docker),
+# defina TEST_DATABASE_URL — o nome do banco precisa conter "test", porque a
+# suite apaga e recria todas as tabelas.
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+if TEST_DATABASE_URL and "test" not in TEST_DATABASE_URL.rsplit("/", 1)[-1].split("?")[0]:
+    raise RuntimeError(
+        "TEST_DATABASE_URL precisa apontar para um banco com 'test' no nome: "
+        "a suite apaga e recria todas as tabelas."
+    )
+
 # Precisa rodar ANTES de qualquer import de app.*: app.core.database cria o
 # engine (bind fixo nessa URL) assim que o modulo e importado pela primeira
 # vez no processo. Definindo a env var aqui, o app inteiro nasce ja apontando
 # para o banco de teste — os testes nunca tocam backend/cilindros.db.
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL or f"sqlite:///{TEST_DB_PATH}"
 os.environ["SECRET_KEY"] = "chave-secreta-somente-para-os-testes"
 os.environ["FRONTEND_ORIGIN"] = "http://localhost:5173"
 os.environ["ENVIRONMENT"] = "local"
@@ -26,6 +37,10 @@ from app.services import auth_service  # noqa: E402
 from auxiliares import mes_ano  # noqa: E402
 from main import app  # noqa: E402
 
+# Schema sempre recriado do zero: create_all nao altera tabelas existentes,
+# entao um banco de teste com schema antigo faria os testes falharem por
+# motivo errado.
+Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 # Ordem que respeita as foreign keys: filhos antes dos pais.

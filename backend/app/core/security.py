@@ -50,14 +50,14 @@ def cookie_is_secure() -> bool:
     return settings.environment != "local"
 
 
-# Local: backend e frontend rodam os dois em localhost (portas diferentes,
-# mas mesmo "site" para fins de SameSite) — "lax" já basta e nem exige
-# Secure, o que evita precisar de HTTPS local. Fora de local (Render +
-# Vercel, dominios diferentes): e uma requisicao cross-site de verdade, e
-# navegadores so mandam cookie cross-site com SameSite="none" — que por sua
-# vez exige Secure=True (cookie_is_secure() ja liga isso fora de "local").
-def cookie_samesite() -> Literal["lax", "none"]:
-    return "lax" if settings.environment == "local" else "none"
+# "lax" em todos os ambientes: o navegador sempre fala com a API pela mesma
+# origem do frontend (/api), via proxy — o do Vite no dev e o rewrite da
+# Vercel em producao, que repassa para o Render. Para o navegador o cookie e
+# de primeira parte, entao nao precisa de SameSite="none" (que so serve para
+# cookie cross-site e e bloqueado por padrao em varios navegadores). Fora de
+# "local" o cookie ainda sai com Secure=True (cookie_is_secure()).
+def cookie_samesite() -> Literal["lax"]:
+    return "lax"
 
 
 def get_current_user(

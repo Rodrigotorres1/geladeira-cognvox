@@ -5,7 +5,7 @@
 Aplicação full stack para controlar o estoque de cilindros de oxigênio de **uma única usuária**: quais cilindros existem, quando cada lote precisa de novo teste hidrostático e quais tipos estão abaixo do estoque mínimo. A tela foi pensada para uso no celular.
 
 ```
-/backend   # API em FastAPI + SQLAlchemy + SQLite
+/backend   # API em FastAPI + SQLAlchemy (SQLite no dev, PostgreSQL em produção)
 /frontend  # Aplicação Vite + React + TypeScript + Tailwind
 ```
 
@@ -55,6 +55,17 @@ pytest -v
 
 Os testes (`backend/tests/`) rodam contra um SQLite isolado (`tests/test.db`, criado e apagado automaticamente) — nunca tocam em `cilindros.db`. Cobrem autenticação e sessão (logout, expiração, cookie adulterado), o script de usuária, as mensagens de validação em português, tipos, lotes, movimentações, a interpretação da data do teste e as bordas dos alertas (com a data de "hoje" fixada).
 
+**Rodando os testes contra PostgreSQL** (mesmo banco da produção), com um Postgres descartável no Docker:
+
+```powershell
+docker run -d --rm --name cilindros-pg-teste -e POSTGRES_PASSWORD=senha-teste -e POSTGRES_DB=cilindros_test -p 55432:5432 postgres:17-alpine
+$env:TEST_DATABASE_URL = "postgresql://postgres:senha-teste@localhost:55432/cilindros_test?sslmode=disable"
+pytest -v
+Remove-Item Env:TEST_DATABASE_URL; docker stop cilindros-pg-teste
+```
+
+`TEST_DATABASE_URL` troca o banco da suíte. Como a suíte apaga e recria todas as tabelas, ela se recusa a rodar se o nome do banco não contiver `test`.
+
 ---
 
 ## 3. Como rodar o frontend
@@ -65,11 +76,11 @@ npm install
 npm run dev
 ```
 
-Abre em `http://localhost:5173`. O backend precisa estar rodando em `http://localhost:8000` (seção 2) — o `FRONTEND_ORIGIN` do `.env` do backend já vem configurado para `http://localhost:5173`, então CORS com cookies funciona sem ajuste extra.
+Abre em `http://localhost:5173`. O backend precisa estar rodando em `http://localhost:8000` (seção 2).
 
 Verificações usadas no projeto: `npx tsc -b` (TypeScript strict) e `npm run lint` (oxlint).
 
-**Sobre a URL da API:** vem de `VITE_API_URL` (seção 4), lida em [`frontend/src/api/client.ts`](frontend/src/api/client.ts). Sem essa variável, cai no fallback `http://localhost:8000` — por isso `npm run dev` funciona direto, sem criar nenhum `.env` local.
+**Sobre a URL da API:** o frontend sempre chama a API pela própria origem, em `/api` ([`frontend/src/api/client.ts`](frontend/src/api/client.ts)). No `npm run dev` (e no `npm run preview`), o proxy do Vite ([`frontend/vite.config.ts`](frontend/vite.config.ts)) repassa `/api/*` para `http://localhost:8000/*`; em produção, o rewrite da Vercel faz o mesmo para o Render (seção 10). Assim o ambiente local funciona igual à produção, sem CORS e com o cookie de sessão de primeira parte. Para apontar o proxy para outro endereço, use `API_PROXY_TARGET` (seção 4).
 
 ---
 
@@ -79,10 +90,10 @@ Verificações usadas no projeto: `npx tsc -b` (TypeScript strict) e `npm run li
 
 | Variável | Obrigatória | Exemplo | Descrição |
 |---|---|---|---|
-| `DATABASE_URL` | Sim | `sqlite:///./cilindros.db` | String de conexão do banco (SQLite por padrão; uma URL do Postgres também funciona, já que o SQLAlchemy abstrai o driver) |
+| `DATABASE_URL` | Sim | `sqlite:///./cilindros.db` | String de conexão do banco. SQLite no dev; em produção, a URL do Neon como ela vem (`postgresql://...?sslmode=require`) — o backend troca internamente para o driver `postgresql+psycopg://` e mantém os parâmetros de SSL. `postgres://` também é aceito |
 | `SECRET_KEY` | Sim | `troque-por-um-valor-aleatorio-longo` | Chave que assina o cookie de sessão (`itsdangerous`). Deve ser aleatória e secreta em produção |
-| `FRONTEND_ORIGIN` | Sim | `http://localhost:5173` | Origem permitida no CORS; precisa bater exatamente com a URL do frontend para os cookies de sessão funcionarem |
-| `ENVIRONMENT` | Não (default `local`) | `local` | `local` desliga o `Secure` do cookie (funciona em `http://`); qualquer outro valor (ex.: `production`) liga `Secure=True` e `SameSite=None` |
+| `FRONTEND_ORIGIN` | Sim | `http://localhost:5173` | Origem permitida no CORS. Com o proxy em `/api`, o navegador não faz chamadas cross-origin, então só importa se alguém chamar a API direto de outra origem; use a URL do frontend (em produção, a da Vercel) |
+| `ENVIRONMENT` | Não (default `local`) | `local` | `local` desliga o `Secure` do cookie (funciona em `http://`); qualquer outro valor (ex.: `production`) liga `Secure=True`. O `SameSite` é sempre `Lax` |
 | `TIMEZONE` | Não (default `America/Sao_Paulo`) | `America/Sao_Paulo` | Fuso usado para decidir o que é "hoje" nos alertas e na validação de data futura |
 | `MESES_ALERTA_ATENCAO` | Não (default `6`) | `6` | Até quantos meses do vencimento o lote fica em "atenção" |
 | `MESES_ALERTA_URGENTE` | Não (default `2`) | `2` | Até quantos meses do vencimento o lote fica "urgente" |
@@ -93,7 +104,7 @@ Verificações usadas no projeto: `npx tsc -b` (TypeScript strict) e `npm run li
 
 | Variável | Obrigatória | Exemplo | Descrição |
 |---|---|---|---|
-| `VITE_API_URL` | Não (default `http://localhost:8000`) | `https://api.exemplo.com` | URL base do backend. Em local pode ficar sem definir; em produção precisa apontar para o backend real |
+| `API_PROXY_TARGET` | Não (default `http://localhost:8000`) | `http://backend:8000` | Para onde o proxy do Vite (`npm run dev`/`npm run preview`) repassa `/api`. Não vai para o bundle do navegador e não é usada na Vercel (lá quem repassa é o `vercel.json`) |
 
 ---
 
@@ -256,9 +267,11 @@ Todas as chaves primárias são UUID v4 gerados no backend, nunca IDs sequenciai
 ### Como funciona a sessão via cookie HttpOnly
 
 1. `POST /auth/login` valida e-mail/senha e cria uma linha na tabela `sessoes` (expira em 7 dias).
-2. O `id` dessa sessão é assinado com `itsdangerous` (usando `SECRET_KEY`) e devolvido no cookie `session_id` com `HttpOnly=True`. Em `local`: `SameSite=Lax`, sem `Secure`. Fora de `local`: `SameSite=None` com `Secure=True` — necessário quando frontend e backend ficam em domínios diferentes (cross-site).
-3. Em toda rota protegida, o backend confere a assinatura e verifica no banco se a sessão existe e não expirou. Por isso o frontend usa `withCredentials: true` e o CORS precisa de `allow_credentials=True` com origem explícita.
+2. O `id` dessa sessão é assinado com `itsdangerous` (usando `SECRET_KEY`) e devolvido no cookie `session_id` com `HttpOnly=True` e `SameSite=Lax`; fora de `local`, também com `Secure=True`.
+3. Em toda rota protegida, o backend confere a assinatura e verifica no banco se a sessão existe e não expirou.
 4. `POST /auth/logout` apaga a sessão no banco — ela morre no servidor, não só no navegador.
+
+**Por que o proxy em `/api`:** frontend (Vercel) e backend (Render) ficam em domínios diferentes. Chamando o Render direto, o cookie de sessão seria de terceiros: exigiria `SameSite=None` e ainda assim seria bloqueado por navegadores que barram cookies de terceiros (Safari no iPhone, por exemplo — o uso principal aqui). Com o rewrite da Vercel, o navegador só fala com o domínio da Vercel; o cookie é de primeira parte, `SameSite=Lax` basta e não há CORS no caminho. No dev, o proxy do Vite reproduz o mesmo arranjo.
 
 Cookie `HttpOnly` em vez de token em `localStorage`: um XSS não consegue ler o cookie. Sessão no banco em vez de JWT autocontido: dá para revogar a qualquer momento. A senha é guardada só como hash bcrypt (`passlib`).
 
@@ -270,7 +283,7 @@ Cookie `HttpOnly` em vez de token em `localStorage`: um XSS não consegue ler o 
 
 ### Escolhas de stack
 
-- **FastAPI + SQLAlchemy + SQLite:** validação e documentação automáticas a partir dos schemas Pydantic (Swagger em `/docs`), ORM com o modelo versionado em código. SQLite basta para o volume de uma única usuária; trocar para Postgres é só mudar `DATABASE_URL`.
+- **FastAPI + SQLAlchemy + SQLite/PostgreSQL:** validação e documentação automáticas a partir dos schemas Pydantic (Swagger em `/docs`), ORM com o modelo versionado em código. SQLite no desenvolvimento (zero configuração) e PostgreSQL (Neon, driver psycopg 3) em produção — o mesmo código roda nos dois, e a suíte de testes passa nos dois.
 - **Vite + React + TypeScript + Tailwind:** TypeScript strict pega mudanças de contrato da API em tempo de compilação; Tailwind facilita o layout responsivo (mobile first).
 
 ---
@@ -279,10 +292,10 @@ Cookie `HttpOnly` em vez de token em `localStorage`: um XSS não consegue ler o 
 
 | Trade-off | Por que ficou assim | Como resolver se precisar |
 |---|---|---|
-| **Sem migrations (Alembic)** | O schema é criado com `create_all`, que não altera tabelas existentes. Com um banco novo (`cilindros.db`) isso basta. | Adotar Alembic antes da primeira mudança de schema com dados reais em produção. |
+| **Sem migrations (Alembic)** | O schema é criado com `create_all` na subida da API, que cria tabelas que faltam mas não altera as existentes. Basta para o primeiro deploy no Neon. | Adotar Alembic antes da primeira mudança de schema com dados reais em produção — sem isso, uma coluna nova no model não chega ao banco do Neon. |
 | **Sem rate limiting em `/auth/login`** | Não há limite de tentativas de senha. | Middleware de rate limiting (ex.: `slowapi`) por IP e e-mail, ou bloqueio temporário após N falhas. |
 | **Sem limpeza de sessões expiradas** | Sessão expirada já é tratada como não autenticada, mas a linha fica na tabela `sessoes`. | Job periódico apagando sessões expiradas, ou limpar as da usuária a cada login. |
-| **Sem lock na checagem de estoque da saída** | A saída lê a quantidade do lote e depois grava. Com uma única usuária e SQLite, duas saídas simultâneas do mesmo lote são improváveis. | Em Postgres, `SELECT ... FOR UPDATE` na linha do lote ou `CHECK (quantidade >= 0)` no banco. |
+| **Sem lock na checagem de estoque da saída** | A saída lê a quantidade do lote e depois grava. Com uma única usuária, duas saídas simultâneas do mesmo lote são improváveis. | Em Postgres, `SELECT ... FOR UPDATE` na linha do lote ou `CHECK (quantidade >= 0)` no banco. |
 | **Datas de criação em UTC sem fuso** | `criado_em` é gravado em UTC sem tzinfo (`app/core/tempo.py:agora_utc`), porque o SQLite não guarda fuso; o frontend converte para o horário local ao exibir. | Migrar para datetimes com fuso (`datetime.now(UTC)`). |
 | **Sem testes automatizados no frontend** | O projeto não tem runner de testes no frontend (Vitest/Testing Library). As regras de negócio estão no backend e cobertas por pytest, mas o que é só de tela fica sem teste automatizado: pré-seleção do lote na saída, preenchimento dos modais, texto "vence em X anos e Y meses", badges e layout no celular. A verificação hoje é `npx tsc -b`, `npm run lint` e uso manual. | Adicionar Vitest + Testing Library para as funções de `lib/` (`loteParaSaida`, `descreverMesesRestantes`, `extrairMensagemErro`) e para os modais; Playwright para o fluxo completo em viewport de celular. |
 | **Imagens Docker sem hot-reload** | As imagens copiam o código no build, então cada mudança exige `docker compose up --build`. | Montar o código como bind mount e manter `--reload`/HMR ativos. |
@@ -306,6 +319,83 @@ docker compose exec backend python criar_usuario.py --nome "Maria" --email maria
 - **`backend/Dockerfile`**: `python:3.13-slim`, instala o `requirements.txt` (inclui `tzdata`, necessário para o fuso `America/Sao_Paulo`), copia o código e sobe `uvicorn main:app --host 0.0.0.0 --port 8000`. O `--host 0.0.0.0` é obrigatório — sem ele o uvicorn só aceita conexões de dentro do próprio container.
 - **`frontend/Dockerfile`**: `node:22-slim`, instala as dependências com `npm ci` e sobe `npm run dev -- --host 0.0.0.0`, pelo mesmo motivo.
 
-**Como os dois serviços se comunicam:** eles **não conversam pela rede interna do Docker**. Quem fala com o backend é o navegador, na máquina host; o frontend é só uma SPA que o navegador baixa. Por isso `src/api/client.ts` aponta para `http://localhost:8000` mesmo no Docker: com `ports: "8000:8000"`, o backend fica acessível em `localhost:8000` a partir do host. `http://backend:8000` só resolveria para outros containers, não para o navegador.
+**Como os dois serviços se comunicam:** o navegador só fala com o frontend (`localhost:5173`) e chama a API em `/api`, como em produção. O proxy do Vite, rodando dentro do container do frontend, repassa essas chamadas para o backend pela rede interna do Compose — por isso o `docker-compose.yml` define `API_PROXY_TARGET=http://backend:8000` (dentro do container do frontend, `localhost` seria ele mesmo). A porta `8000` continua publicada só para acessar o Swagger (`/docs`) direto do host.
 
 **Persistência do banco:** o `docker-compose.yml` sobrescreve `DATABASE_URL` para `sqlite:///./data/cilindros.db` e monta o volume nomeado `backend_data` em `/app/data`, separando o ciclo de vida dos dados do ciclo de vida do container. O `.dockerignore` exclui qualquer `*.db` local, então a imagem nunca leva dados junto.
+
+---
+
+## 10. Deploy (Neon + Render + Vercel)
+
+```
+navegador ──> Vercel (frontend estático)
+                 └── /api/*  ──rewrite──>  Render (FastAPI)  ──>  Neon (PostgreSQL)
+```
+
+O navegador só conhece o domínio da Vercel. Chamadas a `/api/*` são repassadas pela Vercel para o Render (sem o prefixo `/api`), e o cookie de sessão fica de primeira parte (seção 7).
+
+### 1. Banco — Neon
+
+Crie o projeto e copie a *connection string* (`postgresql://usuario:senha@ep-....neon.tech/banco?sslmode=require`). Ela é usada como está no `DATABASE_URL` do Render. As tabelas são criadas automaticamente quando a API sobe pela primeira vez.
+
+### 2. Backend — Render (Web Service)
+
+| Configuração | Valor |
+|---|---|
+| Root Directory | `backend` |
+| Runtime | Python |
+| Build Command | `pip install -r requirements.txt` |
+| Start Command | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+| Health Check Path | `/health` |
+
+Variáveis de ambiente:
+
+| Variável | Valor |
+|---|---|
+| `DATABASE_URL` | connection string do Neon, como copiada (com `?sslmode=require`) |
+| `SECRET_KEY` | valor aleatório longo — ex.: `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Trocar esse valor derruba todas as sessões |
+| `ENVIRONMENT` | `production` (liga `Secure` no cookie) |
+| `FRONTEND_ORIGIN` | URL da Vercel, ex.: `https://cilindros.vercel.app` |
+| `PYTHON_VERSION` | `3.13.5` (mesma versão usada no desenvolvimento e no `Dockerfile`) |
+| `TIMEZONE`, `MESES_ALERTA_ATENCAO`, `MESES_ALERTA_URGENTE` | opcionais; só se quiser mudar os padrões (seção 4) |
+
+No plano gratuito o Render hiberna o serviço sem uso: a primeira requisição depois disso pode levar uns 50 segundos.
+
+### 3. Frontend — Vercel
+
+**Antes do deploy, troque o placeholder `RENDER_URL`** em [`frontend/vercel.json`](frontend/vercel.json) pelo host do Render, sem `https://`:
+
+```json
+{ "source": "/api/:path*", "destination": "https://cilindros-api.onrender.com/:path*" }
+```
+
+O rewrite de `/api` precisa continuar **antes** do rewrite de SPA (`/(.*)` → `/index.html`), senão as chamadas à API recebem o HTML do app.
+
+| Configuração | Valor |
+|---|---|
+| Root Directory | `frontend` |
+| Framework Preset | Vite |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+
+Variáveis de ambiente: **nenhuma**. A URL da API é sempre `/api`; `API_PROXY_TARGET` só vale para o servidor do Vite no desenvolvimento.
+
+### 4. Criar a usuária em produção
+
+O script roda na sua máquina, apontando para o Neon (os outros valores obrigatórios vêm do `backend/.env` local):
+
+```powershell
+cd backend
+.\venv\Scripts\Activate.ps1
+$env:DATABASE_URL = "postgresql://usuario:senha@ep-....neon.tech/banco?sslmode=require"
+python criar_usuario.py --nome "Maria" --email maria@exemplo.com
+Remove-Item Env:DATABASE_URL
+```
+
+O mesmo vale para `--redefinir-senha`.
+
+### 5. Conferindo
+
+- `https://<app>.vercel.app/api/health` responde `{"status":"ok"}` — o rewrite chega ao Render.
+- O login funciona e, nas ferramentas do navegador, o cookie `session_id` aparece no domínio da Vercel com `HttpOnly`, `Secure` e `SameSite=Lax`.
+- Recarregar a página em `/estoque` ou `/historico` abre o app (rewrite de SPA), e não um 404.

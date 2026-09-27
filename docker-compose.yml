@@ -17,6 +17,11 @@ services:
     build: ./frontend
     ports:
       - "5173:5173"
+    environment:
+      # O navegador chama /api no proprio frontend (igual em producao) e o
+      # proxy do Vite repassa para o backend pela rede interna do compose.
+      # "localhost" aqui seria o proprio container do frontend.
+      API_PROXY_TARGET: http://backend:8000
     depends_on:
       - backend
 
