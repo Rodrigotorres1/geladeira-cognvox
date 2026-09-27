@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://RENDER_URL/:path*" },
+    { "source": "/api/:path*", "destination": "https://cilindros-api.onrender.com/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
